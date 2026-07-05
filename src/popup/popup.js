@@ -371,6 +371,56 @@ function renderAddAccount() {
   );
 }
 
+async function resetWallet() {
+  await clearVault();
+  await endSession();
+  await chrome.storage.local.remove(ACTIVE_KEY);
+  state.store = null;
+  state.rawKey = null;
+  state.wallet = null;
+  renderHome();
+}
+
+function renderSettings() {
+  const infoRow = (k, v) =>
+    el('div', { class: 'settings-row' }, el('span', {}, k), el('span', {}, v));
+  const version = (globalThis.chrome?.runtime?.getManifest?.() ?? {}).version ?? 'dev';
+
+  const confirmInput = el('input', { type: 'text', placeholder: 'Type RESET to confirm', autocomplete: 'off' });
+  const resetBtn = el('button', { class: 'btn danger', disabled: '' }, 'Reset wallet');
+  confirmInput.addEventListener('input', () => {
+    if (confirmInput.value.trim() === 'RESET') resetBtn.removeAttribute('disabled');
+    else resetBtn.setAttribute('disabled', '');
+  });
+  resetBtn.addEventListener('click', async () => {
+    if (confirmInput.value.trim() !== 'RESET') return;
+    resetBtn.setAttribute('disabled', '');
+    resetBtn.textContent = 'Resetting…';
+    await resetWallet();
+  });
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
+      el('h2', {}, 'Settings')
+    ),
+    el('div', { class: 'card' },
+      el('span', { class: 'label' }, 'Session'),
+      infoRow('Auto-lock', 'after 15 min of inactivity'),
+      infoRow('Accounts', String(state.store.accounts.length)),
+      infoRow('Network', 'keryx-mainnet'),
+      infoRow('Version', version)
+    ),
+    el('div', { class: 'card danger stack' },
+      el('span', { class: 'label danger' }, 'Danger zone'),
+      el('p', { class: 'hint', style: 'text-align:left' },
+        'Reset removes ALL accounts and the encrypted vault from this browser. Funds are only recoverable with the seed phrases — make sure every one of them is backed up before continuing.'),
+      confirmInput,
+      resetBtn
+    )
+  );
+}
+
 function renderLocked() {
   const password = el('input', { type: 'password', placeholder: '••••••••' });
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
@@ -420,13 +470,7 @@ function renderLocked() {
       style: 'opacity:.5;width:100%',
       onclick: async () => {
         if (!window.confirm('Remove ALL accounts and the encrypted vault from this browser? Make sure every seed phrase is backed up.')) return;
-        await clearVault();
-        await endSession();
-        await chrome.storage.local.remove(ACTIVE_KEY);
-        state.store = null;
-        state.rawKey = null;
-        state.wallet = null;
-        renderHome();
+        await resetWallet();
       },
     }, 'Use a different wallet (clear all data)')
   );
@@ -524,7 +568,7 @@ function renderDashboard() {
     }
   }
 
-  // account switcher
+  // account switcher with inline rename
   const accountSelect = el('select', { class: 'account-select', title: 'Switch account' });
   for (const a of state.store.accounts) {
     const opt = el('option', { value: a.id }, `${a.label} (…${accountAddress(a).slice(-6)})`);
@@ -535,6 +579,38 @@ function renderDashboard() {
     await setActive(accountSelect.value);
     renderDashboard();
   });
+
+  const accountRow = el('div', { class: 'account-row' });
+  const renderSwitchMode = () => {
+    accountRow.replaceChildren(
+      accountSelect,
+      el('button', { class: 'btn-small', title: 'Rename account', onclick: renderEditMode }, '✎'),
+      el('button', { class: 'btn-small', title: 'Add account', onclick: renderAddAccount }, '＋ Add')
+    );
+  };
+  function renderEditMode() {
+    const nameInput = el('input', { type: 'text', value: acct.label, maxlength: '24', title: 'Account name' });
+    const save = async () => {
+      const label = nameInput.value.trim();
+      if (label && label !== acct.label) {
+        acct.label = label;
+        await persistStore();
+      }
+      renderDashboard();
+    };
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') save();
+      if (e.key === 'Escape') renderSwitchMode();
+    });
+    accountRow.replaceChildren(
+      nameInput,
+      el('button', { class: 'btn-small', title: 'Save name', onclick: save }, '✓'),
+      el('button', { class: 'btn-small', title: 'Cancel', onclick: renderSwitchMode }, '✕')
+    );
+    nameInput.focus();
+    nameInput.select();
+  }
+  renderSwitchMode();
 
   const refreshBtn = el('button', { class: 'btn-small', title: 'Refresh', onclick: () => { loadOverview(); loadTxs(); } }, '↺');
 
@@ -550,23 +626,8 @@ function renderDashboard() {
           title: 'Lock wallet (keeps encrypted vault)',
           onclick: async () => { await endSession(); state.wallet = null; renderLocked(); },
         }, 'Lock'),
-        el('button', {
-          class: 'btn-small danger',
-          title: 'Remove ALL accounts from this browser',
-          onclick: async () => {
-            if (!window.confirm('Reset the wallet? This removes ALL accounts and the encrypted vault from this browser. Make sure every seed phrase is backed up.')) return;
-            await clearVault();
-            await endSession();
-            await chrome.storage.local.remove(ACTIVE_KEY);
-            state.store = null;
-            state.rawKey = null;
-            state.wallet = null;
-            renderHome();
-          },
-        }, 'Reset'))),
-    el('div', { class: 'account-row' },
-      accountSelect,
-      el('button', { class: 'btn-small', title: 'Add account', onclick: renderAddAccount }, '＋ Add')),
+        el('button', { class: 'btn-small', title: 'Settings', onclick: renderSettings }, '⚙'))),
+    accountRow,
     el('div', { class: 'card' },
       el('span', { class: 'label' }, `${acct.label} — KRX address`),
       el('div', { class: 'addr-row' },

@@ -8,9 +8,10 @@ Private keys are derived and stored **only on your device** — the extension ta
 
 - **Create a new wallet** — generates a 24-word BIP39 mnemonic with a backup-confirmation step, then a separate page to set the session password.
 - **Import a wallet** — accepts a 12- or 24-word BIP39 mnemonic.
-- **Multiple accounts** — switchable from the dashboard. "Add account" offers: next address from the current seed (`m/44'/111111'/0'/0/{n}`), a brand-new seed phrase, or an imported one. **One global session password secures the entire account store** — accounts added while unlocked need no extra password.
+- **Multiple accounts** — switchable and renamable from the dashboard. "Add account" offers: next address from the current seed (`m/44'/111111'/0'/0/{n}`), a brand-new seed phrase, or an imported one. **One global session password secures the entire account store** — accounts added while unlocked need no extra password.
+- **Settings page** — session info plus a danger zone: the destructive "Reset wallet" (removes all accounts + vault) lives there and only unlocks after typing `RESET`.
 - **Balance dashboard** — live KRX balance (auto-refresh every 15 s), approximate USD value, UTXO count with consolidation hint, network DAA score, and paginated transaction history linking to the explorer.
-- **Lock / auto-lock** — decrypted secrets live only in `chrome.storage.session` (in-memory); a background alarm enforces a 15-minute inactivity auto-lock. "Lock" keeps the encrypted vault; "Reset" removes it.
+- **Lock / auto-lock** — decrypted secrets live only in `chrome.storage.session` (in-memory); a background alarm enforces a 15-minute inactivity auto-lock. "Lock" keeps the encrypted vault; "Reset" (in Settings) removes it.
 
 Planned for phase 2: KRX transfer, UTXO consolidation, AI inference queries (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — the full transaction-signing protocol is already documented there).
 

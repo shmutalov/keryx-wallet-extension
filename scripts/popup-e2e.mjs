@@ -117,6 +117,34 @@ check(18, 'unlock restores dashboard', app().textContent.includes('Balance'));
 check(19, 'both accounts survive lock/unlock', app().querySelectorAll('.account-select option').length === 2);
 check(20, 'active account preserved', app().querySelector('.addr')?.textContent === addr);
 
+// --- rename account ---
+findBtn('✎').click();
+await sleep(50);
+const nameInput = app().querySelector('.account-row input[type=text]');
+check(21, 'rename input appears', !!nameInput && nameInput.value === 'Account 1');
+nameInput.value = 'Main';
+[...app().querySelectorAll('.account-row button')].find((b) => b.textContent === '✓').click();
+await until(() => [...app().querySelectorAll('.account-select option')].some((o) => o.textContent.startsWith('Main (')), 10);
+check(22, 'account renamed in switcher', [...app().querySelectorAll('.account-select option')][0]?.textContent.startsWith('Main ('));
+check(23, 'rename persisted to store label', app().textContent.includes('Main — KRX address'));
+
+// --- settings page hides the destructive reset ---
+check(24, 'no Reset on dashboard, gear instead', !findBtn('Reset') && !!findBtn('⚙'));
+findBtn('⚙').click();
+await sleep(50);
+check(25, 'settings page opens', app().textContent.includes('Danger zone'));
+const resetBtn = findBtn('Reset wallet');
+check(26, 'reset disabled without confirmation text', resetBtn.disabled);
+const confirmInput = app().querySelector('.card.danger input[type=text]');
+confirmInput.value = 'RESET';
+confirmInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+await sleep(50);
+check(27, 'reset enabled after typing RESET', !resetBtn.disabled);
+resetBtn.click();
+await until(() => !!findBtn('Create a new wallet'), 10);
+check(28, 'reset returns to first-run screen', !!findBtn('Create a new wallet'));
+check(29, 'vault and active id cleared', !localStore.krx_sess && !localStore.krx_active);
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);
   process.exit(1);

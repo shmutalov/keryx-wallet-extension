@@ -288,8 +288,19 @@ textarea::placeholder {
 
 .account-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
+}
+
+.account-row .btn-small {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.account-row input[type="text"] {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .account-select {
@@ -313,6 +324,41 @@ textarea::placeholder {
 .account-select option {
   background: var(--mx-surface);
   color: var(--mx-text);
+}
+
+/* --- settings --- */
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--mx-dim);
+  padding: 4px 0;
+}
+
+.settings-row span:last-child {
+  color: var(--mx-text);
+  text-align: right;
+}
+
+.card.danger {
+  border-color: var(--mx-error-border);
+}
+
+.label.danger {
+  color: var(--mx-error);
+}
+
+.btn.danger {
+  background: transparent;
+  color: var(--mx-error);
+  border-color: var(--mx-error-border);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: var(--mx-error);
+  box-shadow: 0 0 8px rgba(224, 82, 82, 0.2);
 }
 
 /* --- header / rows --- */
