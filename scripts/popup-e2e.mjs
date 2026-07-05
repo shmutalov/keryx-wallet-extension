@@ -31,7 +31,7 @@ const findBtn = (text) =>
   [...app().querySelectorAll('button')].find((b) => b.textContent.includes(text));
 
 // run the bundle
-const code = readFileSync('d:/Projects/mine/keryx-wallet-extension/extension/popup.js', 'utf8');
+const code = readFileSync(new URL('../extension/popup.js', import.meta.url), 'utf8');
 new Function(code)();
 
 await sleep(200);
