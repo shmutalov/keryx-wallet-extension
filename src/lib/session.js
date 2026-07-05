@@ -1,28 +1,37 @@
 // Unlocked-wallet session state.
 //
-// The decrypted mnemonic is held only in chrome.storage.session (in-memory,
-// cleared when the browser closes). The background service worker enforces a
-// 15-minute inactivity auto-lock (same timeout as the official web wallet);
-// the popup refreshes the activity timestamp on user interaction.
+// While unlocked, the decrypted account store and the raw vault AES key are
+// held only in chrome.storage.session (in-memory, cleared when the browser
+// closes). The background service worker enforces a 15-minute inactivity
+// auto-lock (same timeout as the official web wallet); the popup refreshes
+// the activity timestamp on user interaction.
 
 const SESSION_KEY = 'krx_unlocked';
 export const AUTOLOCK_MS = 15 * 60 * 1000;
 
-export async function startSession(mnemonic) {
+export async function startSession(store, rawKeyHex) {
   await chrome.storage.session.set({
-    [SESSION_KEY]: { mnemonic, lastActive: Date.now() },
+    [SESSION_KEY]: { store, rawKeyHex, lastActive: Date.now() },
   });
 }
 
-/** @returns {Promise<string|null>} mnemonic if an unlocked, non-expired session exists */
-export async function getSessionMnemonic() {
+/** @returns {Promise<{store: object, rawKeyHex: string}|null>} unlocked, non-expired session */
+export async function getSession() {
   const { [SESSION_KEY]: s } = await chrome.storage.session.get(SESSION_KEY);
   if (!s) return null;
   if (Date.now() - s.lastActive > AUTOLOCK_MS) {
     await endSession();
     return null;
   }
-  return s.mnemonic;
+  return { store: s.store, rawKeyHex: s.rawKeyHex };
+}
+
+/** Keep the in-memory copy in sync after the store changes (account added, etc.). */
+export async function updateSessionStore(store) {
+  const { [SESSION_KEY]: s } = await chrome.storage.session.get(SESSION_KEY);
+  if (s) {
+    await chrome.storage.session.set({ [SESSION_KEY]: { ...s, store, lastActive: Date.now() } });
+  }
 }
 
 export async function touchSession() {

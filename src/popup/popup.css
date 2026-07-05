@@ -262,7 +262,10 @@ textarea::placeholder {
 .mnemonic-grid span i {
   font-style: normal;
   color: var(--mx-muted);
-  margin-right: 4px;
+  display: inline-block;
+  width: 2ch;
+  text-align: right;
+  margin-right: 5px;
 }
 
 .checkbox-row {
@@ -279,6 +282,37 @@ textarea::placeholder {
   margin-top: 3px;
   flex-shrink: 0;
   accent-color: var(--mx-cta);
+}
+
+/* --- account switcher --- */
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-select {
+  flex: 1;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  background: var(--mx-input-bg);
+  color: var(--mx-green);
+  border: 1px solid var(--mx-border);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.account-select:focus,
+.account-select:hover {
+  border-color: var(--mx-mid);
+}
+
+.account-select option {
+  background: var(--mx-surface);
+  color: var(--mx-text);
 }
 
 /* --- header / rows --- */

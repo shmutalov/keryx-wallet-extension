@@ -6,10 +6,11 @@ Private keys are derived and stored **only on your device** — the extension ta
 
 ## Features (phase 1)
 
-- **Create a new wallet** — generates a 24-word BIP39 mnemonic, shows the derived `keryx:` address, and encrypts the mnemonic with a session password.
+- **Create a new wallet** — generates a 24-word BIP39 mnemonic with a backup-confirmation step, then a separate page to set the session password.
 - **Import a wallet** — accepts a 12- or 24-word BIP39 mnemonic.
+- **Multiple accounts** — switchable from the dashboard. "Add account" offers: next address from the current seed (`m/44'/111111'/0'/0/{n}`), a brand-new seed phrase, or an imported one. **One global session password secures the entire account store** — accounts added while unlocked need no extra password.
 - **Balance dashboard** — live KRX balance (auto-refresh every 15 s), approximate USD value, UTXO count with consolidation hint, network DAA score, and paginated transaction history linking to the explorer.
-- **Lock / auto-lock** — decrypted keys live only in `chrome.storage.session` (in-memory); a background alarm enforces a 15-minute inactivity auto-lock. "Lock" keeps the encrypted vault; "Disconnect" removes it.
+- **Lock / auto-lock** — decrypted secrets live only in `chrome.storage.session` (in-memory); a background alarm enforces a 15-minute inactivity auto-lock. "Lock" keeps the encrypted vault; "Reset" removes it.
 
 Planned for phase 2: KRX transfer, UTXO consolidation, AI inference queries (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — the full transaction-signing protocol is already documented there).
 
@@ -37,8 +38,8 @@ docs/PROTOCOL.md    Reverse-engineered Keryx protocol notes (addresses, sighash,
 
 ## Security model
 
-- The mnemonic is encrypted with **PBKDF2-SHA256 (600,000 iterations) → AES-256-GCM** — the same scheme as the official web wallet — and stored in `chrome.storage.local`.
-- The decrypted mnemonic exists only in `chrome.storage.session` (memory-backed, cleared when the browser exits) and is wiped after 15 minutes of inactivity.
+- All seed phrases live in a single **account store**, encrypted as one blob with **PBKDF2-SHA256 (600,000 iterations) → AES-256-GCM** under the global session password, and stored in `chrome.storage.local`. (A v1 single-mnemonic vault is migrated automatically on unlock.)
+- While unlocked, the decrypted store and the derived AES key exist only in `chrome.storage.session` (memory-backed, cleared when the browser exits) and are wiped after 15 minutes of inactivity. The AES key is retained so adding an account re-encrypts the vault without re-prompting for the password.
 - No keys, mnemonics, or passwords are ever sent over the network; the only remote host is `https://keryx-labs.com` (read-only API in phase 1).
 
 ## CI / Deploy

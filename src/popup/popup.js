@@ -1,24 +1,75 @@
-// Keryx Wallet popup — screens: home / create / import / locked / dashboard.
+// Keryx Wallet popup.
+//
+// Screens: home (first run) / create-backup / set-password / import /
+// add-account / locked / dashboard. One global session password secures the
+// whole account store; accounts are switchable from the dashboard.
 
 import {
   generateMnemonic,
   validateMnemonic,
   deriveWallet,
   formatKRX,
+  shortAddress,
   DERIVATION_BASE,
 } from '../lib/keryx.js';
 import { api, API_BASE } from '../lib/api.js';
-import { saveVault, unlockVault, vaultExists, clearVault } from '../lib/vault.js';
-import { startSession, getSessionMnemonic, touchSession, endSession } from '../lib/session.js';
+import { createVault, unlockVault, updateVault, vaultExists, clearVault } from '../lib/vault.js';
+import { startSession, getSession, updateSessionStore, touchSession, endSession } from '../lib/session.js';
 
 const app = document.getElementById('app');
+const ACTIVE_KEY = 'krx_active';
 
 const state = {
-  wallet: null, // { address, privateKeyHex, publicKeyHex }
+  store: null, // { accounts: [{ id, label, mnemonic, index }] }
+  rawKey: null, // hex AES key for vault updates (memory/session only)
+  activeId: null,
+  wallet: null, // { address, privateKeyHex, publicKeyHex } of the active account
   refreshTimer: null,
+  addrCache: new Map(), // `${mnemonic}:${index}` -> address
 };
 
-// --- tiny DOM helper ---------------------------------------------------------
+// --- account helpers -----------------------------------------------------------
+
+function activeAccount() {
+  return state.store.accounts.find((a) => a.id === state.activeId) ?? state.store.accounts[0];
+}
+
+function accountAddress(account) {
+  const key = `${account.mnemonic}:${account.index}`;
+  if (!state.addrCache.has(key)) {
+    state.addrCache.set(key, deriveWallet(account.mnemonic, account.index).address);
+  }
+  return state.addrCache.get(key);
+}
+
+async function setActive(id) {
+  state.activeId = id;
+  await chrome.storage.local.set({ [ACTIVE_KEY]: id });
+  const acct = activeAccount();
+  state.wallet = deriveWallet(acct.mnemonic, acct.index);
+}
+
+async function persistStore() {
+  await updateVault(state.store, state.rawKey);
+  await updateSessionStore(state.store);
+}
+
+async function addAccount(account) {
+  state.store.accounts.push(account);
+  await persistStore();
+  await setActive(account.id);
+  renderDashboard();
+}
+
+function nextLabel() {
+  return `Account ${state.store.accounts.length + 1}`;
+}
+
+function findDuplicate(mnemonic, index) {
+  return state.store.accounts.find((a) => a.mnemonic === mnemonic && a.index === index);
+}
+
+// --- tiny DOM helper -------------------------------------------------------------
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -29,7 +80,7 @@ function el(tag, props = {}, ...children) {
     else node.setAttribute(k, v);
   }
   for (const child of children.flat()) {
-    if (child == null) continue;
+    if (!child && child !== 0) continue;
     node.append(child.nodeType ? child : document.createTextNode(child));
   }
   return node;
@@ -94,64 +145,59 @@ function renderHome() {
     el(
       'div',
       { class: 'card stack', style: 'margin-top:10px' },
-      el('button', { class: 'btn', onclick: renderCreate }, '⊕ Create a new wallet'),
-      el('button', { class: 'btn ghost', onclick: renderImport }, '↩ Import with mnemonic phrase')
+      el('button', { class: 'btn', onclick: () => renderCreateBackup({ firstRun: true }) }, '⊕ Create a new wallet'),
+      el('button', { class: 'btn ghost', onclick: () => renderImport({ firstRun: true }) }, '↩ Import with mnemonic phrase')
     ),
     el('div', { class: 'spacer' }),
     el('p', { class: 'hint' }, 'Private keys stay in your browser — they never leave your machine.')
   );
 }
 
-function renderCreate() {
-  const mnemonic = generateMnemonic();
+/**
+ * Step 1 of wallet creation: show and confirm the mnemonic backup.
+ * firstRun: continue to the password page. Unlocked: adds the account directly.
+ */
+function renderCreateBackup({ firstRun, mnemonic: preset }) {
+  const mnemonic = preset ?? generateMnemonic();
   const words = mnemonic.split(' ');
-  let derived = null;
+  let address = null;
   try {
-    derived = deriveWallet(mnemonic);
+    address = deriveWallet(mnemonic).address;
   } catch {}
 
-  const pw = passwordFields();
+  const submit = el('button', { class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const submit = el('button', { class: 'btn', disabled: '' }, 'Open wallet →');
-  const pwCard = el('div', { class: 'card', style: 'display:none' },
-    el('p', { class: 'subtitle', style: 'text-align:left;margin:0 0 12px' },
-      "Set a password to protect your wallet in this browser. You'll use it instead of the mnemonic next time."),
-    pw.block,
-    errorBox,
-    el('div', { style: 'margin-top:12px' }, submit)
-  );
-
   const checkbox = el('input', { type: 'checkbox' });
-  const refresh = () => {
-    pwCard.style.display = checkbox.checked ? '' : 'none';
-    if (checkbox.checked && pw.valid()) submit.removeAttribute('disabled');
+  checkbox.addEventListener('change', () => {
+    if (checkbox.checked) submit.removeAttribute('disabled');
     else submit.setAttribute('disabled', '');
-  };
-  checkbox.addEventListener('change', refresh);
-  pw.inputs.forEach((i) => i.addEventListener('input', refresh));
+  });
 
   submit.addEventListener('click', async () => {
-    if (!checkbox.checked || !pw.valid()) return;
+    if (!checkbox.checked) return;
+    if (firstRun) {
+      renderSetPassword({
+        account: { id: crypto.randomUUID(), label: 'Account 1', mnemonic, index: 0 },
+        onBack: () => renderCreateBackup({ firstRun: true, mnemonic }),
+      });
+      return;
+    }
     submit.setAttribute('disabled', '');
-    submit.textContent = 'Encrypting…';
-    errorBox.style.display = 'none';
+    submit.textContent = 'Adding…';
     try {
-      await saveVault(mnemonic, pw.value());
-      await startSession(mnemonic);
-      state.wallet = derived ?? deriveWallet(mnemonic);
-      renderDashboard();
+      await addAccount({ id: crypto.randomUUID(), label: nextLabel(), mnemonic, index: 0 });
     } catch (e) {
       errorBox.textContent = String(e);
       errorBox.style.display = '';
       submit.removeAttribute('disabled');
-      submit.textContent = 'Open wallet →';
+      submit.textContent = 'Add account →';
     }
   });
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderHome }, '← Back'),
-      el('h2', {}, 'New wallet')
+      el('button', { class: 'link-btn', onclick: firstRun ? renderHome : renderAddAccount }, '← Back'),
+      el('h2', {}, firstRun ? 'New wallet' : 'New seed phrase')
     ),
     el('div', { class: 'card' },
       el('span', { class: 'label' }, 'Mnemonic phrase (24 words) — save it in a safe place'),
@@ -160,53 +206,47 @@ function renderCreate() {
       ),
       el('div', { style: 'margin-top:10px' }, copyButton(() => mnemonic, 'Copy phrase'))
     ),
-    derived &&
+    address &&
       el('div', { class: 'card' },
         el('span', { class: 'label' }, 'Generated address'),
-        el('div', { class: 'addr' }, derived.address)
+        el('div', { class: 'addr' }, address)
       ),
     el('div', { class: 'card' },
       el('label', { class: 'checkbox-row' }, checkbox,
         el('span', {}, 'I have saved my mnemonic phrase. I understand that without it, I cannot recover my funds.'))
     ),
-    pwCard
+    errorBox,
+    submit
   );
 }
 
-function renderImport() {
-  const textarea = el('textarea', { rows: '3', placeholder: 'word1 word2 word3 …' });
-  const invalid = el('div', { class: 'error-text', style: 'display:none' },
-    'Invalid mnemonic — check spelling and word count.');
+/**
+ * Step 2 of first-run setup (create or import): set the global session
+ * password. It secures ALL accounts — new accounts added later never need
+ * their own password.
+ */
+function renderSetPassword({ account, onBack }) {
   const pw = passwordFields();
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
   const submit = el('button', { class: 'btn', disabled: '' }, 'Open wallet →');
-  const pwCard = el('div', { class: 'card', style: 'display:none' },
-    pw.block,
-    errorBox,
-    el('div', { style: 'margin-top:12px' }, submit)
-  );
-
-  const normalized = () => textarea.value.trim().toLowerCase().replace(/\s+/g, ' ');
   const refresh = () => {
-    const ok = normalized() && validateMnemonic(normalized());
-    invalid.style.display = textarea.value.trim() && !ok ? '' : 'none';
-    pwCard.style.display = ok ? '' : 'none';
-    if (ok && pw.valid()) submit.removeAttribute('disabled');
+    if (pw.valid()) submit.removeAttribute('disabled');
     else submit.setAttribute('disabled', '');
   };
-  textarea.addEventListener('input', refresh);
   pw.inputs.forEach((i) => i.addEventListener('input', refresh));
 
   submit.addEventListener('click', async () => {
-    const mnemonic = normalized();
-    if (!validateMnemonic(mnemonic) || !pw.valid()) return;
+    if (!pw.valid()) return;
     submit.setAttribute('disabled', '');
-    submit.textContent = 'Deriving keys…';
+    submit.textContent = 'Encrypting…';
     errorBox.style.display = 'none';
     try {
-      state.wallet = deriveWallet(mnemonic);
-      await saveVault(mnemonic, pw.value());
-      await startSession(mnemonic);
+      const store = { accounts: [account] };
+      const { rawKeyHex } = await createVault(store, pw.value());
+      await startSession(store, rawKeyHex);
+      state.store = store;
+      state.rawKey = rawKeyHex;
+      await setActive(account.id);
       renderDashboard();
     } catch (e) {
       errorBox.textContent = String(e);
@@ -218,18 +258,116 @@ function renderImport() {
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderHome }, '← Back'),
-      el('h2', {}, 'Import wallet')
+      el('button', { class: 'link-btn', onclick: onBack }, '← Back'),
+      el('h2', {}, 'Set session password')
+    ),
+    el('div', { class: 'card stack' },
+      el('p', { class: 'subtitle', style: 'text-align:left;margin:0' },
+        'One password protects your whole wallet in this browser — every account you add is secured by it. You\'ll use it instead of the mnemonic on future visits.'),
+      pw.block,
+      errorBox,
+      submit
+    ),
+    el('div', { class: 'spacer' }),
+    el('p', { class: 'hint' }, 'Password is never stored. It encrypts your seed phrases on this device.')
+  );
+  setTimeout(() => pw.inputs[0].focus(), 50);
+}
+
+/** Import a seed phrase. firstRun: continue to password page. Unlocked: adds the account. */
+function renderImport({ firstRun }) {
+  const textarea = el('textarea', { rows: '3', placeholder: 'word1 word2 word3 …' });
+  const invalid = el('div', { class: 'error-text', style: 'display:none' });
+  const errorBox = el('div', { class: 'error-box', style: 'display:none' });
+  const submit = el('button', { class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
+
+  const normalized = () => textarea.value.trim().toLowerCase().replace(/\s+/g, ' ');
+  const refresh = () => {
+    const m = normalized();
+    let msg = '';
+    if (textarea.value.trim() && !validateMnemonic(m)) msg = 'Invalid mnemonic — check spelling and word count.';
+    else if (!firstRun && m && findDuplicate(m, 0)) msg = 'This seed phrase is already added.';
+    invalid.textContent = msg;
+    invalid.style.display = msg ? '' : 'none';
+    if (m && !msg && validateMnemonic(m)) submit.removeAttribute('disabled');
+    else submit.setAttribute('disabled', '');
+  };
+  textarea.addEventListener('input', refresh);
+
+  submit.addEventListener('click', async () => {
+    const mnemonic = normalized();
+    if (!validateMnemonic(mnemonic)) return;
+    if (firstRun) {
+      renderSetPassword({
+        account: { id: crypto.randomUUID(), label: 'Account 1', mnemonic, index: 0 },
+        onBack: () => renderImport({ firstRun: true }),
+      });
+      return;
+    }
+    if (findDuplicate(mnemonic, 0)) return;
+    submit.setAttribute('disabled', '');
+    submit.textContent = 'Adding…';
+    try {
+      await addAccount({ id: crypto.randomUUID(), label: nextLabel(), mnemonic, index: 0 });
+    } catch (e) {
+      errorBox.textContent = String(e);
+      errorBox.style.display = '';
+      submit.removeAttribute('disabled');
+      submit.textContent = 'Add account →';
+    }
+  });
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: firstRun ? renderHome : renderAddAccount }, '← Back'),
+      el('h2', {}, firstRun ? 'Import wallet' : 'Import seed phrase')
     ),
     el('div', { class: 'card' },
       el('span', { class: 'label' }, 'Mnemonic phrase (12 or 24 words)'),
       textarea,
       invalid
     ),
-    pwCard,
+    errorBox,
+    submit,
     el('div', { class: 'spacer' }),
-    el('p', { class: 'hint' },
-      'Password is never stored. To remove your wallet, click "Disconnect" or clear extension data.')
+    firstRun &&
+      el('p', { class: 'hint' },
+        'Password is never stored. To remove your wallet, click "Reset" or clear extension data.')
+  );
+}
+
+/** Unlocked-only: choose how to add another account. */
+function renderAddAccount() {
+  const acct = activeAccount();
+  const derivedIndex =
+    Math.max(...state.store.accounts.filter((a) => a.mnemonic === acct.mnemonic).map((a) => a.index)) + 1;
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
+      el('h2', {}, 'Add account')
+    ),
+    el('div', { class: 'card stack' },
+      el('button', {
+        class: 'btn',
+        onclick: async () => {
+          await addAccount({
+            id: crypto.randomUUID(),
+            label: nextLabel(),
+            mnemonic: acct.mnemonic,
+            index: derivedIndex,
+          });
+        },
+      }, '⊕ New address from current seed'),
+      el('p', { class: 'hint', style: 'text-align:left' },
+        `Derives ${DERIVATION_BASE}/${derivedIndex} from ${acct.label}'s seed phrase — nothing new to back up.`)
+    ),
+    el('div', { class: 'card stack' },
+      el('button', { class: 'btn ghost', onclick: () => renderCreateBackup({ firstRun: false }) }, '✚ Create a new seed phrase'),
+      el('button', { class: 'btn ghost', onclick: () => renderImport({ firstRun: false }) }, '↩ Import a seed phrase')
+    ),
+    el('div', { class: 'spacer' }),
+    el('p', { class: 'hint' }, 'All accounts are secured by your one session password.')
   );
 }
 
@@ -243,16 +381,20 @@ function renderLocked() {
     submit.setAttribute('disabled', '');
     submit.textContent = 'Decrypting…';
     errorBox.style.display = 'none';
-    const mnemonic = await unlockVault(password.value);
-    if (!mnemonic) {
+    const res = await unlockVault(password.value);
+    if (!res) {
       errorBox.textContent = 'Wrong password.';
       errorBox.style.display = '';
       submit.removeAttribute('disabled');
       submit.textContent = 'Unlock →';
       return;
     }
-    await startSession(mnemonic);
-    state.wallet = deriveWallet(mnemonic);
+    state.store = res.store;
+    state.rawKey = res.rawKeyHex;
+    await startSession(res.store, res.rawKeyHex);
+    const { [ACTIVE_KEY]: savedId } = await chrome.storage.local.get(ACTIVE_KEY);
+    const acct = res.store.accounts.find((a) => a.id === savedId) ?? res.store.accounts[0];
+    await setActive(acct.id);
     renderDashboard();
   }
 
@@ -277,18 +419,22 @@ function renderLocked() {
       class: 'link-btn center',
       style: 'opacity:.5;width:100%',
       onclick: async () => {
-        if (!window.confirm('Remove the stored wallet from this browser? Make sure you have your mnemonic phrase backed up.')) return;
+        if (!window.confirm('Remove ALL accounts and the encrypted vault from this browser? Make sure every seed phrase is backed up.')) return;
         await clearVault();
         await endSession();
+        await chrome.storage.local.remove(ACTIVE_KEY);
+        state.store = null;
+        state.rawKey = null;
         state.wallet = null;
         renderHome();
       },
-    }, 'Use a different wallet (clear session)')
+    }, 'Use a different wallet (clear all data)')
   );
   setTimeout(() => password.focus(), 50);
 }
 
 function renderDashboard() {
+  const acct = activeAccount();
   const { address } = state.wallet;
 
   const balanceBody = el('div', { class: 'loading' }, 'Loading…');
@@ -378,13 +524,26 @@ function renderDashboard() {
     }
   }
 
+  // account switcher
+  const accountSelect = el('select', { class: 'account-select', title: 'Switch account' });
+  for (const a of state.store.accounts) {
+    const opt = el('option', { value: a.id }, `${a.label} (…${accountAddress(a).slice(-6)})`);
+    if (a.id === acct.id) opt.setAttribute('selected', '');
+    accountSelect.append(opt);
+  }
+  accountSelect.addEventListener('change', async () => {
+    await setActive(accountSelect.value);
+    renderDashboard();
+  });
+
   const refreshBtn = el('button', { class: 'btn-small', title: 'Refresh', onclick: () => { loadOverview(); loadTxs(); } }, '↺');
 
   show(
     el('div', { class: 'topbar' },
       el('div', {},
         el('h2', { class: 'glow' }, 'KERYX WALLET'),
-        el('div', { class: 'hint', style: 'text-align:left;margin-top:2px' }, `Derivation path: ${DERIVATION_BASE}/0`)),
+        el('div', { class: 'hint', style: 'text-align:left;margin-top:2px' },
+          `${DERIVATION_BASE}/${acct.index}`)),
       el('div', { class: 'actions' },
         el('button', {
           class: 'btn-small',
@@ -393,17 +552,23 @@ function renderDashboard() {
         }, 'Lock'),
         el('button', {
           class: 'btn-small danger',
-          title: 'Remove wallet from this browser',
+          title: 'Remove ALL accounts from this browser',
           onclick: async () => {
-            if (!window.confirm('Disconnect and remove the stored wallet from this browser? Make sure your mnemonic phrase is backed up.')) return;
+            if (!window.confirm('Reset the wallet? This removes ALL accounts and the encrypted vault from this browser. Make sure every seed phrase is backed up.')) return;
             await clearVault();
             await endSession();
+            await chrome.storage.local.remove(ACTIVE_KEY);
+            state.store = null;
+            state.rawKey = null;
             state.wallet = null;
             renderHome();
           },
-        }, 'Disconnect'))),
+        }, 'Reset'))),
+    el('div', { class: 'account-row' },
+      accountSelect,
+      el('button', { class: 'btn-small', title: 'Add account', onclick: renderAddAccount }, '＋ Add')),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Your KRX address'),
+      el('span', { class: 'label' }, `${acct.label} — KRX address`),
       el('div', { class: 'addr-row' },
         el('div', { class: 'addr' }, address),
         copyButton(() => address),
@@ -442,10 +607,14 @@ for (const evt of ['mousedown', 'keydown']) {
     renderHome();
     return;
   }
-  const mnemonic = await getSessionMnemonic();
-  if (mnemonic) {
+  const session = await getSession();
+  if (session) {
     try {
-      state.wallet = deriveWallet(mnemonic);
+      state.store = session.store;
+      state.rawKey = session.rawKeyHex;
+      const { [ACTIVE_KEY]: savedId } = await chrome.storage.local.get(ACTIVE_KEY);
+      const acct = session.store.accounts.find((a) => a.id === savedId) ?? session.store.accounts[0];
+      await setActive(acct.id);
       renderDashboard();
       return;
     } catch {

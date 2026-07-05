@@ -1,5 +1,6 @@
 // End-to-end smoke test of the bundled popup against the LIVE Keryx API.
-// Drives: home -> create wallet -> vault encrypt -> dashboard -> live balance.
+// Drives: home -> create (backup step) -> set-password step -> dashboard ->
+// live balance -> add derived account -> switch accounts -> lock/unlock.
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'fs';
 
@@ -29,62 +30,96 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const app = () => document.getElementById('app');
 const findBtn = (text) =>
   [...app().querySelectorAll('button')].find((b) => b.textContent.includes(text));
+const until = async (fn, tries = 60) => {
+  for (let i = 0; i < tries && !fn(); i++) await sleep(500);
+  return fn();
+};
+let failures = 0;
+const check = (n, desc, ok, extra = '') => {
+  console.log(`${n}. ${desc}:`, ok, extra);
+  if (!ok) failures++;
+};
 
 // run the bundle
 const code = readFileSync(new URL('../extension/popup.js', import.meta.url), 'utf8');
 new Function(code)();
 
 await sleep(200);
-console.log('1. initial screen shows create button:', !!findBtn('Create a new wallet'));
+check(1, 'initial screen shows create button', !!findBtn('Create a new wallet'));
 
+// --- create flow: backup step ---
 findBtn('Create a new wallet').click();
 await sleep(100);
-const words = [...app().querySelectorAll('.mnemonic-grid span')].map((s) => s.textContent.replace(/^\d+/, ''));
-console.log('2. mnemonic grid has 24 words:', words.length === 24);
+const words = [...app().querySelectorAll('.mnemonic-grid span')];
+check(2, 'mnemonic grid has 24 words', words.length === 24);
 const addr = app().querySelector('.addr')?.textContent ?? '';
-console.log('3. address preview:', addr.startsWith('keryx:q'), addr.slice(0, 28) + '…');
+check(3, 'address preview', addr.startsWith('keryx:q'), addr.slice(0, 28) + '…');
+check(4, 'Next disabled before confirmation', findBtn('Next').disabled);
 
-// tick the confirmation checkbox
 const checkbox = app().querySelector('input[type=checkbox]');
 checkbox.checked = true;
 checkbox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep(50);
+findBtn('Next').click();
+await sleep(100);
 
-// set password
+// --- password step (separate page) ---
+check(5, 'password page is a separate step', app().textContent.includes('Set session password'));
 const pws = [...app().querySelectorAll('input[type=password]')];
-console.log('4. password fields visible:', pws.length === 2);
+check(6, 'password fields present', pws.length === 2);
 for (const p of pws) {
   p.value = 'test-passphrase';
   p.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 }
 await sleep(50);
-const openBtn = findBtn('Open wallet');
-console.log('5. submit enabled:', !openBtn.disabled);
+findBtn('Open wallet').click();
 
-openBtn.click();
 // PBKDF2 600k iterations + live API round-trips
-for (let i = 0; i < 60 && !app().textContent.includes('Balance'); i++) await sleep(500);
-console.log('6. dashboard rendered:', app().textContent.includes('KERYX WALLET') && app().textContent.includes('Balance'));
-console.log('7. vault persisted:', !!localStore.krx_sess && localStore.krx_sess.it === 600000);
-console.log('8. session started:', !!sessionStore.krx_unlocked);
+await until(() => app().textContent.includes('Balance'));
+check(7, 'dashboard rendered', app().textContent.includes('Balance'));
+check(8, 'vault persisted (v2, global password)', localStore.krx_sess?.v === 2 && localStore.krx_sess?.it === 600000);
+check(9, 'session started', !!sessionStore.krx_unlocked?.rawKeyHex);
 
-for (let i = 0; i < 40 && !app().querySelector('.balance-value'); i++) await sleep(500);
-const bal = app().querySelector('.balance-value')?.textContent;
-console.log('9. live balance loaded:', bal?.trim());
-console.log('10. address on dashboard matches preview:', app().querySelector('.addr')?.textContent === addr);
+await until(() => app().querySelector('.balance-value'));
+check(10, 'live balance loaded', !!app().querySelector('.balance-value'), app().querySelector('.balance-value')?.textContent.trim());
+check(11, 'dashboard address matches preview', app().querySelector('.addr')?.textContent === addr);
 
-// lock flow
+// --- multi-account: derive a second address from the same seed ---
+findBtn('＋ Add').click();
+await sleep(100);
+check(12, 'add-account chooser shown', app().textContent.includes('Add account'));
+findBtn('New address from current seed').click();
+await until(() => app().querySelectorAll('.account-select option').length === 2);
+const addr2 = app().querySelector('.addr')?.textContent;
+check(13, 'second account active with different address', addr2 !== addr && addr2?.startsWith('keryx:q'));
+check(14, 'switcher lists 2 accounts', app().querySelectorAll('.account-select option').length === 2);
+
+// --- switch back to account 1 ---
+const select = app().querySelector('.account-select');
+select.value = select.querySelectorAll('option')[0].value;
+select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await until(() => app().querySelector('.addr')?.textContent === addr);
+check(15, 'switching back restores account 1 address', app().querySelector('.addr')?.textContent === addr);
+
+// --- lock / unlock preserves all accounts under the one password ---
 findBtn('Lock').click();
 await sleep(200);
-console.log('11. locked screen:', app().textContent.includes('WALLET LOCKED'));
+check(16, 'locked screen', app().textContent.includes('WALLET LOCKED'));
 const pwInput = app().querySelector('input[type=password]');
 pwInput.value = 'wrong-password';
 findBtn('Unlock').click();
-for (let i = 0; i < 30 && !app().textContent.includes('Wrong password'); i++) await sleep(500);
-console.log('12. wrong password rejected:', app().textContent.includes('Wrong password.'));
+await until(() => app().textContent.includes('Wrong password'), 30);
+check(17, 'wrong password rejected', app().textContent.includes('Wrong password.'));
 pwInput.value = 'test-passphrase';
 findBtn('Unlock').click();
-for (let i = 0; i < 30 && !app().textContent.includes('Balance'); i++) await sleep(500);
-console.log('13. unlock restores dashboard:', app().textContent.includes('Balance'));
+await until(() => app().textContent.includes('Balance'), 30);
+check(18, 'unlock restores dashboard', app().textContent.includes('Balance'));
+check(19, 'both accounts survive lock/unlock', app().querySelectorAll('.account-select option').length === 2);
+check(20, 'active account preserved', app().querySelector('.addr')?.textContent === addr);
 
+if (failures > 0) {
+  console.error(`\n${failures} check(s) FAILED`);
+  process.exit(1);
+}
+console.log('\nAll checks passed');
 process.exit(0);
