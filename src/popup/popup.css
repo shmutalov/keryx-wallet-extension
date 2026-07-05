@@ -336,6 +336,123 @@ textarea::placeholder {
   color: var(--mx-text);
 }
 
+/* --- send screen --- */
+
+.field.rel {
+  position: relative;
+}
+
+.suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin-top: 3px;
+  background: var(--mx-surface);
+  border: 1px solid var(--mx-border);
+  border-radius: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.suggest-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--mx-border);
+}
+
+.suggest-item:last-child {
+  border-bottom: none;
+}
+
+.suggest-item:hover {
+  background: #101812;
+}
+
+.suggest-name {
+  color: var(--mx-green);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggest-tag {
+  color: var(--mx-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  flex-shrink: 0;
+}
+
+.send-row {
+  display: flex;
+  gap: 10px;
+}
+
+.amount-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.amount-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.success-box {
+  font-size: 12px;
+  color: var(--mx-green);
+  background: var(--mx-ok-bg);
+  border: 1px solid var(--mx-mid);
+  padding: 8px 12px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.tx-link {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.tx-link a {
+  color: var(--mx-bright);
+}
+
+/* --- address book --- */
+
+.book-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--mx-border);
+}
+
+.book-row:last-child {
+  border-bottom: none;
+}
+
+.book-name {
+  font-size: 12px;
+  color: var(--mx-green);
+  font-weight: 700;
+}
+
+.book-addr {
+  font-size: 10px;
+  color: var(--mx-dim);
+  margin-top: 1px;
+}
+
 /* --- API status indicator --- */
 
 .status-row {

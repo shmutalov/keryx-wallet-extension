@@ -11,9 +11,11 @@ Private keys are derived and stored **only on your device** — the extension ta
 - **Multiple accounts** — switchable and renamable from the dashboard. "Add account" offers: next address from the current seed (`m/44'/111111'/0'/0/{n}`), a brand-new seed phrase, or an imported one. **One global session password secures the entire account store** — accounts added while unlocked need no extra password.
 - **Settings page** — session info plus a danger zone: the destructive "Reset wallet" (removes all accounts + vault) lives there and only unlocks after typing `RESET`.
 - **Balance dashboard** — live KRX balance (auto-refresh every 15 s), approximate USD value, UTXO count with consolidation hint, network DAA score, and paginated transaction history linking to the explorer.
+- **Send KRX** — Kaspa-style transaction building and signing fully client-side: keyed blake2b-256 `TransactionSigningHash`, BIP340 Schnorr signatures, greedy largest-first UTXO selection with coinbase-maturity filtering, change back to self, broadcast via the public node.
+- **Address book & recents** — save `name → address` entries (managed from Settings or the Send screen); the destination field offers a picker with saved and recently-used addresses, filtered as you type.
 - **Lock / auto-lock** — decrypted secrets live only in `chrome.storage.session` (in-memory); a background alarm enforces a 15-minute inactivity auto-lock. "Lock" keeps the encrypted vault; "Reset" (in Settings) removes it.
 
-Planned for phase 2: KRX transfer, UTXO consolidation, AI inference queries (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — the full transaction-signing protocol is already documented there).
+Still planned: UTXO consolidation and AI inference queries (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — both flows are already specified there).
 
 ## Install (Load unpacked)
 
@@ -56,3 +58,8 @@ git tag v0.1.0 && git push origin v0.1.0
 ## Verification
 
 The address codec was validated against the live network: mainnet richlist addresses decode, checksum-verify, and re-encode byte-identically, and freshly derived addresses are accepted by the public node API.
+
+Two test suites run via `npm test` (both gate CI):
+
+- `scripts/tx-unit.mjs` — signer unit tests: coin selection, coinbase maturity, change math, wire format, and BIP340 signature verification against the recomputed sighash.
+- `scripts/popup-e2e.mjs` — jsdom end-to-end drive of the real bundle: onboarding, vault, multi-account, address book, and a full send against a mocked node (broadcast body inspected); live-data checks auto-skip when the node is unreachable.

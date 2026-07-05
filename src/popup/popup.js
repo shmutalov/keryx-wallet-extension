@@ -9,9 +9,19 @@ import {
   validateMnemonic,
   deriveWallet,
   formatKRX,
+  parseKRX,
+  isValidAddress,
   shortAddress,
   DERIVATION_BASE,
 } from '../lib/keryx.js';
+import { buildTransferTx, MIN_FEE_SOMPI } from '../lib/tx.js';
+import {
+  getAddressBook,
+  addBookEntry,
+  removeBookEntry,
+  getRecentAddresses,
+  pushRecentAddress,
+} from '../lib/book.js';
 import { api, API_BASE } from '../lib/api.js';
 import { createVault, unlockVault, updateVault, vaultExists, clearVault } from '../lib/vault.js';
 import { startSession, getSession, updateSessionStore, touchSession, endSession } from '../lib/session.js';
@@ -415,6 +425,14 @@ function renderSettings() {
       infoRow('Network', 'keryx-mainnet'),
       infoRow('Version', version)
     ),
+    el('div', { class: 'card' },
+      el('span', { class: 'label' }, 'Address book'),
+      el('button', {
+        id: 'settings-book-btn',
+        class: 'btn ghost',
+        onclick: () => renderAddressBook({ onBack: renderSettings }),
+      }, '⌂ Manage address book')
+    ),
     el('div', { class: 'card danger stack' },
       el('span', { class: 'label danger' }, 'Danger zone'),
       el('p', { class: 'hint', style: 'text-align:left' },
@@ -423,6 +441,269 @@ function renderSettings() {
       resetBtn
     )
   );
+}
+
+/** Address book management. Reachable from Settings and the Send screen. */
+function renderAddressBook({ onBack = renderDashboard, prefillAddress = '' } = {}) {
+  const nameInput = el('input', { id: 'ab-name', type: 'text', placeholder: 'Name (e.g. Main, Bank)', maxlength: '24' });
+  const addrInput = el('input', { id: 'ab-address', type: 'text', placeholder: 'keryx:q…', value: prefillAddress, spellcheck: 'false' });
+  const errorText = el('div', { id: 'ab-error', class: 'error-text', style: 'display:none' });
+  const addBtn = el('button', { id: 'ab-add-btn', class: 'btn' }, '＋ Add entry');
+  const listCard = el('div', { id: 'ab-list', class: 'card' });
+
+  async function refreshList() {
+    const book = await getAddressBook();
+    const rows = book.map((e, i) =>
+      el('div', { class: 'book-row' },
+        el('div', { class: 'book-info' },
+          el('div', { class: 'book-name' }, e.name),
+          el('div', { class: 'book-addr' }, shortAddress(e.address, 18, 8))),
+        el('button', {
+          id: `ab-del-${i}`,
+          class: 'btn-small danger',
+          title: `Remove ${e.name}`,
+          onclick: async () => {
+            await removeBookEntry(e.address);
+            refreshList();
+          },
+        }, '✕'))
+    );
+    listCard.replaceChildren(
+      el('span', { class: 'label' }, 'Saved addresses'),
+      ...(rows.length ? rows : [el('p', { class: 'hint', style: 'text-align:left' }, 'No entries yet.')])
+    );
+  }
+
+  addBtn.addEventListener('click', async () => {
+    errorText.style.display = 'none';
+    try {
+      await addBookEntry(nameInput.value, addrInput.value);
+      nameInput.value = '';
+      addrInput.value = '';
+      await refreshList();
+    } catch (e) {
+      errorText.textContent = e instanceof Error ? e.message : String(e);
+      errorText.style.display = '';
+    }
+  });
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: onBack }, '← Back'),
+      el('h2', {}, 'Address book')
+    ),
+    el('div', { class: 'card stack' },
+      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Name'), nameInput),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Address'), addrInput, errorText),
+      addBtn
+    ),
+    listCard
+  );
+  refreshList();
+  if (prefillAddress) setTimeout(() => nameInput.focus(), 50);
+}
+
+/** Send KRX: destination (with book/recents picker), amount, fee, broadcast. */
+function renderSend() {
+  const acct = activeAccount();
+  const { address } = state.wallet;
+
+  let availableSompi = null;
+  let bookEntries = [];
+  let recents = [];
+  let busy = false;
+
+  const availLine = el('div', { class: 'balance-meta' }, 'Available: …');
+  const destInput = el('input', {
+    id: 'dest-input', type: 'text', placeholder: 'keryx:q… or pick from the list',
+    autocomplete: 'off', spellcheck: 'false',
+  });
+  const destError = el('div', { class: 'error-text', style: 'display:none' }, 'Invalid keryx: address.');
+  const suggest = el('div', { id: 'dest-suggest', class: 'suggest', style: 'display:none' });
+  const amountInput = el('input', { id: 'amount-input', type: 'number', placeholder: '0.001', min: '0', step: 'any' });
+  const feeInput = el('input', { id: 'fee-input', type: 'number', value: '0.3', min: '0.3', step: 'any' });
+  const feeError = el('div', { class: 'error-text', style: 'display:none' }, 'Minimum fee is 0.3 KRX.');
+  const statusBox = el('div', { id: 'send-status', style: 'display:none' });
+  const submit = el('button', { id: 'send-confirm-btn', class: 'btn', disabled: '' }, 'Send →');
+
+  const destValid = () => isValidAddress(destInput.value.trim());
+  const feeSompi = () => parseKRX(feeInput.value || '0');
+  const amountSompi = () => parseKRX(amountInput.value || '0');
+
+  function validate() {
+    const dest = destInput.value.trim();
+    destError.style.display = dest && !destValid() ? '' : 'none';
+    feeError.style.display = feeInput.value && feeSompi() < MIN_FEE_SOMPI ? '' : 'none';
+    const ok = !busy && destValid() && amountSompi() > 0 && feeSompi() >= MIN_FEE_SOMPI;
+    if (ok) submit.removeAttribute('disabled');
+    else submit.setAttribute('disabled', '');
+  }
+
+  function renderSuggest() {
+    const q = destInput.value.trim().toLowerCase();
+    const items = [];
+    for (const e of bookEntries) {
+      if (!q || e.name.toLowerCase().includes(q) || e.address.startsWith(q)) {
+        items.push({ name: e.name, address: e.address, tag: 'book' });
+      }
+    }
+    for (const r of recents) {
+      if (bookEntries.some((b) => b.address === r.address)) continue;
+      if (!q || r.address.startsWith(q)) items.push({ address: r.address, tag: 'recent' });
+    }
+    if (!items.length) {
+      suggest.style.display = 'none';
+      return;
+    }
+    suggest.replaceChildren(
+      ...items.map((it) =>
+        el('div', {
+          class: 'suggest-item',
+          // mousedown fires before the input's blur, so the click always lands
+          onmousedown: (ev) => {
+            ev.preventDefault();
+            destInput.value = it.address;
+            suggest.style.display = 'none';
+            validate();
+          },
+        },
+        el('span', { class: 'suggest-name' }, it.name ?? shortAddress(it.address, 12, 6)),
+        el('span', { class: 'suggest-tag' }, it.tag))
+      )
+    );
+    suggest.style.display = '';
+  }
+
+  destInput.addEventListener('focus', renderSuggest);
+  destInput.addEventListener('input', () => { renderSuggest(); validate(); });
+  destInput.addEventListener('blur', () => setTimeout(() => { suggest.style.display = 'none'; }, 100));
+  destInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') suggest.style.display = 'none';
+  });
+  amountInput.addEventListener('input', validate);
+  feeInput.addEventListener('input', validate);
+
+  const maxBtn = el('button', {
+    id: 'max-btn', class: 'btn-small', title: 'Send entire available balance minus fee',
+    onclick: () => {
+      if (availableSompi == null) return;
+      const max = Math.max(0, availableSompi - feeSompi());
+      amountInput.value = formatKRX(max);
+      validate();
+    },
+  }, 'max');
+
+  function setStatus(kind, ...children) {
+    statusBox.className = kind === 'error' ? 'error-box' : 'success-box';
+    statusBox.replaceChildren(...children);
+    statusBox.style.display = '';
+  }
+
+  async function doSend() {
+    if (submit.disabled) return;
+    const dest = destInput.value.trim();
+    const amount = amountSompi();
+    const fee = feeSompi();
+    busy = true;
+    validate();
+    statusBox.style.display = 'none';
+    try {
+      submit.textContent = '⏳ Loading UTXOs…';
+      const [utxos, info] = await Promise.all([
+        api.utxos(address, 2000),
+        api.info().catch(() => null),
+      ]);
+      submit.textContent = '⚙ Signing…';
+      const built = buildTransferTx({
+        utxos,
+        toAddress: dest,
+        amountSompi: amount,
+        feeSompi: fee,
+        changeAddress: address,
+        privateKeyHex: state.wallet.privateKeyHex,
+        currentDaaScore: info?.last_daa_score ?? 0,
+      });
+      submit.textContent = '📡 Broadcasting…';
+      const res = await api.broadcast(built.tx);
+      await pushRecentAddress(dest);
+      recents = await getRecentAddresses();
+      const children = [
+        el('div', {}, `Transaction sent! ${formatKRX(amount)} KRX → ${shortAddress(dest, 14, 6)}`),
+        el('div', { class: 'tx-link' }, 'TX ID: ',
+          el('a', { href: `${API_BASE}/tx/${res.transaction_id}`, target: '_blank', rel: 'noreferrer' },
+            res.transaction_id)),
+      ];
+      if (!bookEntries.some((b) => b.address === dest)) {
+        children.push(el('button', {
+          id: 'save-dest-btn', class: 'btn-small', style: 'margin-top:6px',
+          onclick: () => renderAddressBook({ onBack: renderSend, prefillAddress: dest }),
+        }, '＋ Save to address book'));
+      }
+      setStatus('success', ...children);
+      amountInput.value = '';
+      setTimeout(loadAvailable, 3000);
+    } catch (e) {
+      setStatus('error', e instanceof Error ? e.message : String(e));
+    } finally {
+      busy = false;
+      submit.textContent = 'Send →';
+      validate();
+    }
+  }
+  submit.addEventListener('click', doSend);
+
+  async function loadAvailable() {
+    try {
+      const bal = await api.balance(address);
+      availableSompi = bal.balance_sompi ?? 0;
+      availLine.textContent = `Available: ${formatKRX(availableSompi)} KRX`;
+    } catch {
+      availLine.textContent = 'Available: — (node unreachable)';
+    }
+  }
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
+      el('h2', {}, 'Send KRX')
+    ),
+    el('div', { class: 'card' },
+      el('span', { class: 'label' }, `From ${acct.label}`),
+      el('div', { class: 'addr', style: 'font-size:10px' }, address),
+      availLine
+    ),
+    el('div', { class: 'card' },
+      el('div', { class: 'field rel' },
+        el('span', { class: 'label' }, 'Destination'),
+        destInput,
+        suggest,
+        destError),
+      el('div', { style: 'margin-top:8px' },
+        el('button', {
+          id: 'manage-book-btn', class: 'link-btn',
+          onclick: () => renderAddressBook({ onBack: renderSend }),
+        }, '⌂ Manage address book'))
+    ),
+    el('div', { class: 'card' },
+      el('div', { class: 'send-row' },
+        el('div', { class: 'field', style: 'flex:1' },
+          el('span', { class: 'label' }, 'Amount (KRX)'),
+          el('div', { class: 'amount-row' }, amountInput, maxBtn)),
+        el('div', { class: 'field', style: 'width:110px' },
+          el('span', { class: 'label' }, 'Fee (KRX)'),
+          feeInput)),
+      feeError
+    ),
+    statusBox,
+    submit,
+    el('p', { class: 'hint' }, 'UTXOs are fetched only when you send. Minimum fee: 0.3 KRX.')
+  );
+
+  loadAvailable();
+  Promise.all([getAddressBook(), getRecentAddresses()]).then(([b, r]) => {
+    bookEntries = b;
+    recents = r;
+  });
 }
 
 function renderLocked() {
@@ -656,9 +937,10 @@ function renderDashboard() {
       el('span', { class: 'label' }, 'Balance'),
       balanceBody,
       netRow),
+    el('button', { id: 'send-btn', class: 'btn', onclick: renderSend }, 'Send KRX →'),
     txCard,
     el('p', { class: 'hint', style: 'margin-top:2px' },
-      'Send · Consolidate · AI inference — coming in the next release.')
+      'Consolidate · AI inference — coming in the next release.')
   );
 
   loadOverview();

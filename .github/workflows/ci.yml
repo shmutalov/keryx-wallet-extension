@@ -32,8 +32,8 @@ jobs:
       - name: Build extension
         run: npm run build
 
-      - name: End-to-end test (jsdom against the live Keryx API)
-        run: npm run test:e2e
+      - name: Tests (signer unit + jsdom e2e; live-data checks auto-skip if node is down)
+        run: npm test
 
       - name: Package extension zip
         run: cd extension && zip -r ../keryx-wallet-extension.zip .

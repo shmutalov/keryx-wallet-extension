@@ -61,6 +61,28 @@ const checkLive = (n, desc, okFn, extraFn = () => '') => {
   check(n, desc, okFn(), extraFn());
 };
 
+// Intercept node endpoints used by the send flow so it runs against a mocked
+// chain (2 spendable UTXOs, broadcast captured for inspection).
+const MOCK_UTXOS = [
+  { transaction_id: 'a'.repeat(64), index: 0, amount_sompi: 3_00000000, script_version: 0,
+    script_public_key: '20' + '11'.repeat(32) + 'ac', block_daa_score: 100, is_coinbase: false },
+  { transaction_id: 'b'.repeat(64), index: 1, amount_sompi: 3_00000000, script_version: 0,
+    script_public_key: '20' + '11'.repeat(32) + 'ac', block_daa_score: 100, is_coinbase: false },
+];
+let broadcastBody = null;
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  const u = String(url);
+  if (u.includes('/utxos?')) {
+    return new Response(JSON.stringify(MOCK_UTXOS), { status: 200 });
+  }
+  if (u.endsWith('/broadcast')) {
+    broadcastBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ transaction_id: 'e2e0'.repeat(16) }), { status: 200 });
+  }
+  return realFetch(url, init);
+};
+
 // run the bundle
 const code = readFileSync(new URL('../extension/popup.js', import.meta.url), 'utf8');
 new Function(code)();
@@ -129,6 +151,57 @@ select.value = select.querySelectorAll('option')[0].value;
 fire(select, 'change');
 await until(() => byId('address')?.textContent === addr);
 check(15, 'switching back restores account 1 address', byId('address')?.textContent === addr);
+
+// --- address book: add account 2's address under a name ---
+byId('send-btn').click();
+await sleep(100);
+check('15a', 'send screen opens', !!byId('dest-input') && !!byId('send-confirm-btn'));
+byId('manage-book-btn').click();
+await sleep(100);
+check('15b', 'address book opens from send screen', !!byId('ab-add-btn'));
+byId('ab-name').value = 'Bob';
+byId('ab-address').value = addr2;
+byId('ab-add-btn').click();
+await until(() => byId('ab-list').textContent.includes('Bob'), 10);
+check('15c', 'book entry added', byId('ab-list').textContent.includes('Bob'));
+byId('ab-name').value = 'Bob2';
+byId('ab-address').value = addr2;
+byId('ab-add-btn').click();
+await until(() => byId('ab-error')?.style.display !== 'none', 10);
+check('15d', 'duplicate address rejected', byId('ab-error').textContent.includes('already'));
+
+// --- send: pick destination from the book, sign, broadcast ---
+app().querySelector('.link-btn').click(); // back to send
+await sleep(100);
+byId('dest-input').dispatchEvent(new dom.window.Event('focus'));
+fire(byId('dest-input'), 'focus');
+await sleep(50);
+const bookItem = [...byId('dest-suggest')?.querySelectorAll('.suggest-item') ?? []]
+  .find((i) => i.textContent.includes('Bob'));
+check('15e', 'picker lists the book entry', !!bookItem);
+bookItem.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true }));
+await sleep(50);
+check('15f', 'picking fills the destination', byId('dest-input').value === addr2);
+byId('amount-input').value = '1.5';
+fire(byId('amount-input'), 'input');
+await sleep(50);
+check('15g', 'send enabled with valid inputs', !byId('send-confirm-btn').disabled);
+byId('send-confirm-btn').click();
+await until(() => byId('send-status')?.className === 'success-box', 30);
+check('15h', 'broadcast succeeded, tx id shown',
+  byId('send-status').className === 'success-box' && byId('send-status').textContent.includes('e2e0'));
+const out0 = broadcastBody?.outputs?.[0];
+const totalOut = (broadcastBody?.outputs ?? []).reduce((s, o) => s + o.amount, 0);
+check('15i', 'broadcast tx pays 1.5 KRX to picked address with change - fee',
+  broadcastBody?.inputs?.length === 1 && out0?.amount === 1_50000000 &&
+  totalOut === 3_00000000 - 30000000 &&
+  broadcastBody.inputs.every((i) => /^41[0-9a-f]{128}01$/.test(i.signature_script) &&
+    i.sequence === '18446744073709551615'));
+check('15j', 'destination saved to recents', localStore.krx_recent?.[0]?.address === addr2);
+check('15k', 'no save-to-book offer for known address', !byId('save-dest-btn'));
+
+app().querySelector('.link-btn').click(); // back to dashboard
+await until(() => !!byId('lock-btn'), 10);
 
 // --- lock / unlock preserves all accounts under the one password ---
 byId('lock-btn').click();
