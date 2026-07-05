@@ -41,6 +41,16 @@ docs/PROTOCOL.md    Reverse-engineered Keryx protocol notes (addresses, sighash,
 - The decrypted mnemonic exists only in `chrome.storage.session` (memory-backed, cleared when the browser exits) and is wiped after 15 minutes of inactivity.
 - No keys, mnemonics, or passwords are ever sent over the network; the only remote host is `https://keryx-labs.com` (read-only API in phase 1).
 
+## CI / Deploy
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and PR: `npm ci` → build → jsdom end-to-end test against the live network → uploads the packaged `keryx-wallet-extension.zip` as a workflow artifact.
+
+Pushing a `v*` tag deploys the **exact artifact that was tested**: it is attached to an auto-generated GitHub Release, and — if the `CWS_EXTENSION_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` repository secrets are configured — published to the Chrome Web Store. Without those secrets the store step is skipped silently.
+
+```
+git tag v0.1.0 && git push origin v0.1.0
+```
+
 ## Verification
 
 The address codec was validated against the live network: mainnet richlist addresses decode, checksum-verify, and re-encode byte-identically, and freshly derived addresses are accepted by the public node API.

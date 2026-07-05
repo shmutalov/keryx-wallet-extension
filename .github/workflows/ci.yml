@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build-and-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension
+        run: npm run build
+
+      - name: End-to-end test (jsdom against the live Keryx API)
+        run: npm run test:e2e
+
+      - name: Package extension zip
+        run: cd extension && zip -r ../keryx-wallet-extension.zip .
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: keryx-wallet-extension
+          path: keryx-wallet-extension.zip
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy release
+    needs: build-and-test
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+    steps:
+      # deploy exactly what was built and tested, not a rebuild
+      - uses: actions/download-artifact@v8
+        with:
+          name: keryx-wallet-extension
+
+      - name: Stamp zip with release version
+        run: mv keryx-wallet-extension.zip "keryx-wallet-extension-${{ github.ref_name }}.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: keryx-wallet-extension-${{ github.ref_name }}.zip
+          generate_release_notes: true
+
+      - name: Publish to Chrome Web Store
+        if: env.CWS_EXTENSION_ID != ''
+        run: >
+          npx --yes chrome-webstore-upload-cli@3 upload
+          --source "keryx-wallet-extension-${{ github.ref_name }}.zip"
+          --extension-id "$CWS_EXTENSION_ID"
+          --client-id "$CWS_CLIENT_ID"
+          --client-secret "$CWS_CLIENT_SECRET"
+          --refresh-token "$CWS_REFRESH_TOKEN"
+          --auto-publish
