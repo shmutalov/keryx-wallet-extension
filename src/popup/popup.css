@@ -186,6 +186,16 @@ h2 {
   cursor: default;
 }
 
+.btn-small.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-small.icon svg {
+  display: block;
+}
+
 .link-btn {
   background: none;
   border: none;
@@ -324,6 +334,43 @@ textarea::placeholder {
 .account-select option {
   background: var(--mx-surface);
   color: var(--mx-text);
+}
+
+/* --- API status indicator --- */
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--mx-muted);
+  margin-top: 3px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mx-muted);
+  flex-shrink: 0;
+}
+
+.status-dot.online {
+  background: var(--mx-cta);
+  box-shadow: 0 0 5px rgba(46, 227, 88, 0.7);
+}
+
+.status-dot.offline {
+  background: var(--mx-error);
+  box-shadow: 0 0 5px rgba(224, 82, 82, 0.7);
+}
+
+#api-status-text {
+  color: var(--mx-dim);
+}
+
+.status-sep {
+  margin: 0 1px;
 }
 
 /* --- settings --- */

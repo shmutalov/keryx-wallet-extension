@@ -2,8 +2,19 @@
 
 export const API_BASE = 'https://keryx-labs.com';
 
+async function doFetch(path, init) {
+  try {
+    return await fetch(`${API_BASE}${path}`, init);
+  } catch {
+    // TCP-level failure (node down/updating, DNS, offline) — fetch gives an
+    // opaque TypeError; translate it for the UI. The dashboard auto-refresh
+    // retries every 15 s.
+    throw new Error('Keryx node unreachable — it may be restarting or updating. Will retry shortly.');
+  }
+}
+
 async function get(path) {
-  const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+  const res = await doFetch(path, { cache: 'no-store' });
   if (!res.ok) {
     let detail = '';
     try {
@@ -15,7 +26,7 @@ async function get(path) {
 }
 
 async function post(path, body) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await doFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

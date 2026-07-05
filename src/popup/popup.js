@@ -95,14 +95,17 @@ function show(...nodes) {
 const LOCK_SVG =
   '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--mx-bright)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
 
+const LOCK_ICON =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
+
 const LOGO_SVG =
   '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--mx-bright)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(46,227,88,.45))"><path d="M8 3v18"></path><path d="M8 12h3"></path><path d="M11 12 17 4h3l-6 8 6 8h-3l-6-8"></path><circle cx="8" cy="3" r="1.1" fill="var(--mx-bright)"></circle><circle cx="8" cy="21" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="4" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="20" r="1.1" fill="var(--mx-bright)"></circle></svg>';
 
-function copyButton(getText, label = 'copy') {
-  const btn = el('button', { class: 'btn-small' }, label);
+function copyButton(getText, label = '⧉', copiedLabel = '✓', id) {
+  const btn = el('button', { ...(id ? { id } : {}), class: 'btn-small', title: 'Copy to clipboard' }, label);
   btn.addEventListener('click', () => {
     navigator.clipboard.writeText(getText()).catch(() => {});
-    btn.textContent = '✓ copied';
+    btn.textContent = copiedLabel;
     btn.classList.add('copied');
     setTimeout(() => {
       btn.textContent = label;
@@ -113,8 +116,8 @@ function copyButton(getText, label = 'copy') {
 }
 
 function passwordFields() {
-  const password = el('input', { type: 'password', placeholder: '••••••••' });
-  const confirm = el('input', { type: 'password', placeholder: '••••••••' });
+  const password = el('input', { id: 'pw-input', type: 'password', placeholder: '••••••••' });
+  const confirm = el('input', { id: 'pw-confirm', type: 'password', placeholder: '••••••••' });
   const mismatch = el('div', { class: 'error-text', style: 'display:none' }, "Passwords don't match.");
   const checkMatch = () => {
     mismatch.style.display = confirm.value && password.value !== confirm.value ? '' : 'none';
@@ -145,8 +148,8 @@ function renderHome() {
     el(
       'div',
       { class: 'card stack', style: 'margin-top:10px' },
-      el('button', { class: 'btn', onclick: () => renderCreateBackup({ firstRun: true }) }, '⊕ Create a new wallet'),
-      el('button', { class: 'btn ghost', onclick: () => renderImport({ firstRun: true }) }, '↩ Import with mnemonic phrase')
+      el('button', { id: 'create-btn', class: 'btn', onclick: () => renderCreateBackup({ firstRun: true }) }, '⊕ Create a new wallet'),
+      el('button', { id: 'import-btn', class: 'btn ghost', onclick: () => renderImport({ firstRun: true }) }, '↩ Import with mnemonic phrase')
     ),
     el('div', { class: 'spacer' }),
     el('p', { class: 'hint' }, 'Private keys stay in your browser — they never leave your machine.')
@@ -165,9 +168,9 @@ function renderCreateBackup({ firstRun, mnemonic: preset }) {
     address = deriveWallet(mnemonic).address;
   } catch {}
 
-  const submit = el('button', { class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
+  const submit = el('button', { id: 'next-btn', class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const checkbox = el('input', { type: 'checkbox' });
+  const checkbox = el('input', { id: 'backup-confirm', type: 'checkbox' });
   checkbox.addEventListener('change', () => {
     if (checkbox.checked) submit.removeAttribute('disabled');
     else submit.setAttribute('disabled', '');
@@ -204,7 +207,7 @@ function renderCreateBackup({ firstRun, mnemonic: preset }) {
       el('div', { class: 'mnemonic-grid' },
         words.map((w, i) => el('span', {}, el('i', {}, String(i + 1)), w))
       ),
-      el('div', { style: 'margin-top:10px' }, copyButton(() => mnemonic, 'Copy phrase'))
+      el('div', { style: 'margin-top:10px' }, copyButton(() => mnemonic, '⧉ Copy phrase', '✓ copied'))
     ),
     address &&
       el('div', { class: 'card' },
@@ -228,7 +231,7 @@ function renderCreateBackup({ firstRun, mnemonic: preset }) {
 function renderSetPassword({ account, onBack }) {
   const pw = passwordFields();
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const submit = el('button', { class: 'btn', disabled: '' }, 'Open wallet →');
+  const submit = el('button', { id: 'open-wallet-btn', class: 'btn', disabled: '' }, 'Open wallet →');
   const refresh = () => {
     if (pw.valid()) submit.removeAttribute('disabled');
     else submit.setAttribute('disabled', '');
@@ -276,10 +279,10 @@ function renderSetPassword({ account, onBack }) {
 
 /** Import a seed phrase. firstRun: continue to password page. Unlocked: adds the account. */
 function renderImport({ firstRun }) {
-  const textarea = el('textarea', { rows: '3', placeholder: 'word1 word2 word3 …' });
+  const textarea = el('textarea', { id: 'mnemonic-input', rows: '3', placeholder: 'word1 word2 word3 …' });
   const invalid = el('div', { class: 'error-text', style: 'display:none' });
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const submit = el('button', { class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
+  const submit = el('button', { id: 'next-btn', class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
 
   const normalized = () => textarea.value.trim().toLowerCase().replace(/\s+/g, ' ');
   const refresh = () => {
@@ -349,6 +352,7 @@ function renderAddAccount() {
     ),
     el('div', { class: 'card stack' },
       el('button', {
+        id: 'derive-btn',
         class: 'btn',
         onclick: async () => {
           await addAccount({
@@ -363,8 +367,8 @@ function renderAddAccount() {
         `Derives ${DERIVATION_BASE}/${derivedIndex} from ${acct.label}'s seed phrase — nothing new to back up.`)
     ),
     el('div', { class: 'card stack' },
-      el('button', { class: 'btn ghost', onclick: () => renderCreateBackup({ firstRun: false }) }, '✚ Create a new seed phrase'),
-      el('button', { class: 'btn ghost', onclick: () => renderImport({ firstRun: false }) }, '↩ Import a seed phrase')
+      el('button', { id: 'new-seed-btn', class: 'btn ghost', onclick: () => renderCreateBackup({ firstRun: false }) }, '✚ Create a new seed phrase'),
+      el('button', { id: 'import-seed-btn', class: 'btn ghost', onclick: () => renderImport({ firstRun: false }) }, '↩ Import a seed phrase')
     ),
     el('div', { class: 'spacer' }),
     el('p', { class: 'hint' }, 'All accounts are secured by your one session password.')
@@ -386,8 +390,8 @@ function renderSettings() {
     el('div', { class: 'settings-row' }, el('span', {}, k), el('span', {}, v));
   const version = (globalThis.chrome?.runtime?.getManifest?.() ?? {}).version ?? 'dev';
 
-  const confirmInput = el('input', { type: 'text', placeholder: 'Type RESET to confirm', autocomplete: 'off' });
-  const resetBtn = el('button', { class: 'btn danger', disabled: '' }, 'Reset wallet');
+  const confirmInput = el('input', { id: 'reset-confirm-input', type: 'text', placeholder: 'Type RESET to confirm', autocomplete: 'off' });
+  const resetBtn = el('button', { id: 'reset-btn', class: 'btn danger', disabled: '' }, 'Reset wallet');
   confirmInput.addEventListener('input', () => {
     if (confirmInput.value.trim() === 'RESET') resetBtn.removeAttribute('disabled');
     else resetBtn.setAttribute('disabled', '');
@@ -422,9 +426,9 @@ function renderSettings() {
 }
 
 function renderLocked() {
-  const password = el('input', { type: 'password', placeholder: '••••••••' });
+  const password = el('input', { id: 'unlock-pw', type: 'password', placeholder: '••••••••' });
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const submit = el('button', { class: 'btn' }, 'Unlock →');
+  const submit = el('button', { id: 'unlock-btn', class: 'btn' }, 'Unlock →');
 
   async function unlock() {
     if (!password.value || submit.disabled) return;
@@ -485,6 +489,14 @@ function renderDashboard() {
   const netRow = el('div', { class: 'net-row', style: 'display:none' });
   const txCard = el('div', { class: 'card', style: 'display:none' });
 
+  // API reachability indicator, refreshed with every overview poll
+  const statusDot = el('span', { id: 'api-status', class: 'status-dot' });
+  const statusText = el('span', { id: 'api-status-text' }, 'checking…');
+  const setStatus = (online) => {
+    statusDot.className = `status-dot ${online ? 'online' : 'offline'}`;
+    statusText.textContent = online ? 'online' : 'offline';
+  };
+
   async function loadOverview() {
     try {
       const [bal, info, utxo, market] = await Promise.all([
@@ -509,6 +521,7 @@ function renderDashboard() {
             `${utxo.count.toLocaleString('en-US')} UTXOs${utxo.count >= 80 ? ' — consolidation recommended' : ''}`)
         );
       }
+      setStatus(true);
       balanceBody.replaceChildren(...parts);
       balanceBody.className = '';
       if (info) {
@@ -519,6 +532,7 @@ function renderDashboard() {
         netRow.style.display = '';
       }
     } catch (e) {
+      setStatus(false);
       balanceBody.className = 'error-text';
       balanceBody.style.fontSize = '12px';
       balanceBody.textContent = e instanceof Error ? e.message : String(e);
@@ -569,7 +583,7 @@ function renderDashboard() {
   }
 
   // account switcher with inline rename
-  const accountSelect = el('select', { class: 'account-select', title: 'Switch account' });
+  const accountSelect = el('select', { id: 'account-select', class: 'account-select', title: 'Switch account' });
   for (const a of state.store.accounts) {
     const opt = el('option', { value: a.id }, `${a.label} (…${accountAddress(a).slice(-6)})`);
     if (a.id === acct.id) opt.setAttribute('selected', '');
@@ -584,12 +598,12 @@ function renderDashboard() {
   const renderSwitchMode = () => {
     accountRow.replaceChildren(
       accountSelect,
-      el('button', { class: 'btn-small', title: 'Rename account', onclick: renderEditMode }, '✎'),
-      el('button', { class: 'btn-small', title: 'Add account', onclick: renderAddAccount }, '＋ Add')
+      el('button', { id: 'rename-btn', class: 'btn-small', title: 'Rename account', onclick: renderEditMode }, '✎'),
+      el('button', { id: 'add-account-btn', class: 'btn-small', title: 'Add account', onclick: renderAddAccount }, '＋ Add')
     );
   };
   function renderEditMode() {
-    const nameInput = el('input', { type: 'text', value: acct.label, maxlength: '24', title: 'Account name' });
+    const nameInput = el('input', { id: 'rename-input', type: 'text', value: acct.label, maxlength: '24', title: 'Account name' });
     const save = async () => {
       const label = nameInput.value.trim();
       if (label && label !== acct.label) {
@@ -604,35 +618,39 @@ function renderDashboard() {
     });
     accountRow.replaceChildren(
       nameInput,
-      el('button', { class: 'btn-small', title: 'Save name', onclick: save }, '✓'),
-      el('button', { class: 'btn-small', title: 'Cancel', onclick: renderSwitchMode }, '✕')
+      el('button', { id: 'rename-save-btn', class: 'btn-small', title: 'Save name', onclick: save }, '✓'),
+      el('button', { id: 'rename-cancel-btn', class: 'btn-small', title: 'Cancel', onclick: renderSwitchMode }, '✕')
     );
     nameInput.focus();
     nameInput.select();
   }
   renderSwitchMode();
 
-  const refreshBtn = el('button', { class: 'btn-small', title: 'Refresh', onclick: () => { loadOverview(); loadTxs(); } }, '↺');
+  const refreshBtn = el('button', { id: 'refresh-btn', class: 'btn-small', title: 'Refresh', onclick: () => { loadOverview(); loadTxs(); } }, '↺');
 
   show(
     el('div', { class: 'topbar' },
       el('div', {},
         el('h2', { class: 'glow' }, 'KERYX WALLET'),
-        el('div', { class: 'hint', style: 'text-align:left;margin-top:2px' },
+        el('div', { class: 'status-row' },
+          statusDot, statusText,
+          el('span', { class: 'status-sep' }, '·'),
           `${DERIVATION_BASE}/${acct.index}`)),
       el('div', { class: 'actions' },
         el('button', {
-          class: 'btn-small',
+          id: 'lock-btn',
+          class: 'btn-small icon',
           title: 'Lock wallet (keeps encrypted vault)',
+          html: LOCK_ICON,
           onclick: async () => { await endSession(); state.wallet = null; renderLocked(); },
-        }, 'Lock'),
-        el('button', { class: 'btn-small', title: 'Settings', onclick: renderSettings }, '⚙'))),
+        }),
+        el('button', { id: 'settings-btn', class: 'btn-small', title: 'Settings', onclick: renderSettings }, '⚙'))),
     accountRow,
     el('div', { class: 'card' },
       el('span', { class: 'label' }, `${acct.label} — KRX address`),
       el('div', { class: 'addr-row' },
-        el('div', { class: 'addr' }, address),
-        copyButton(() => address),
+        el('div', { id: 'address', class: 'addr' }, address),
+        copyButton(() => address, '⧉', '✓', 'copy-address-btn'),
         refreshBtn)),
     el('div', { class: 'card' },
       el('span', { class: 'label' }, 'Balance'),

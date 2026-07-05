@@ -1,6 +1,11 @@
-// End-to-end smoke test of the bundled popup against the LIVE Keryx API.
+// End-to-end smoke test of the bundled popup.
 // Drives: home -> create (backup step) -> set-password step -> dashboard ->
-// live balance -> add derived account -> switch accounts -> lock/unlock.
+// live balance -> add derived account -> switch accounts -> rename ->
+// lock/unlock -> settings reset.
+//
+// Elements are selected by stable ids (a contract with the popup markup) so
+// label/icon copy can change freely. Checks that need live data from the
+// Keryx API are SKIPPED with a warning when the node is unreachable.
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'fs';
 
@@ -28,16 +33,32 @@ globalThis.chrome = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const app = () => document.getElementById('app');
-const findBtn = (text) =>
-  [...app().querySelectorAll('button')].find((b) => b.textContent.includes(text));
+const byId = (id) => document.getElementById(id);
+const fire = (node, type) => node.dispatchEvent(new dom.window.Event(type, { bubbles: true }));
 const until = async (fn, tries = 60) => {
   for (let i = 0; i < tries && !fn(); i++) await sleep(500);
   return fn();
 };
+
 let failures = 0;
 const check = (n, desc, ok, extra = '') => {
   console.log(`${n}. ${desc}:`, ok, extra);
   if (!ok) failures++;
+};
+
+// live-data checks are skipped when the node is down (e.g. mid-update)
+let apiUp = false;
+try {
+  const res = await fetch('https://keryx-labs.com/api/v1/info', { signal: AbortSignal.timeout(8000) });
+  apiUp = res.ok;
+} catch {}
+if (!apiUp) console.warn('⚠ Keryx API unreachable — live-data checks will be SKIPPED\n');
+const checkLive = (n, desc, okFn, extraFn = () => '') => {
+  if (!apiUp) {
+    console.log(`${n}. ${desc}: SKIPPED (API unreachable)`);
+    return;
+  }
+  check(n, desc, okFn(), extraFn());
 };
 
 // run the bundle
@@ -45,109 +66,113 @@ const code = readFileSync(new URL('../extension/popup.js', import.meta.url), 'ut
 new Function(code)();
 
 await sleep(200);
-check(1, 'initial screen shows create button', !!findBtn('Create a new wallet'));
+check(1, 'initial screen shows create button', !!byId('create-btn'));
 
 // --- create flow: backup step ---
-findBtn('Create a new wallet').click();
+byId('create-btn').click();
 await sleep(100);
-const words = [...app().querySelectorAll('.mnemonic-grid span')];
-check(2, 'mnemonic grid has 24 words', words.length === 24);
+check(2, 'mnemonic grid has 24 words', app().querySelectorAll('.mnemonic-grid span').length === 24);
 const addr = app().querySelector('.addr')?.textContent ?? '';
 check(3, 'address preview', addr.startsWith('keryx:q'), addr.slice(0, 28) + '…');
-check(4, 'Next disabled before confirmation', findBtn('Next').disabled);
+check(4, 'Next disabled before confirmation', byId('next-btn').disabled);
 
-const checkbox = app().querySelector('input[type=checkbox]');
-checkbox.checked = true;
-checkbox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+byId('backup-confirm').checked = true;
+fire(byId('backup-confirm'), 'change');
 await sleep(50);
-findBtn('Next').click();
+byId('next-btn').click();
 await sleep(100);
 
 // --- password step (separate page) ---
 check(5, 'password page is a separate step', app().textContent.includes('Set session password'));
-const pws = [...app().querySelectorAll('input[type=password]')];
-check(6, 'password fields present', pws.length === 2);
-for (const p of pws) {
-  p.value = 'test-passphrase';
-  p.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+check(6, 'password fields present', !!byId('pw-input') && !!byId('pw-confirm'));
+for (const id of ['pw-input', 'pw-confirm']) {
+  byId(id).value = 'test-passphrase';
+  fire(byId(id), 'input');
 }
 await sleep(50);
-findBtn('Open wallet').click();
+byId('open-wallet-btn').click();
 
-// PBKDF2 600k iterations + live API round-trips
-await until(() => app().textContent.includes('Balance'));
-check(7, 'dashboard rendered', app().textContent.includes('Balance'));
+// PBKDF2 600k iterations (+ live API round-trips when up)
+await until(() => byId('account-select'));
+check(7, 'dashboard rendered', !!byId('account-select') && app().textContent.includes('Balance'));
 check(8, 'vault persisted (v2, global password)', localStore.krx_sess?.v === 2 && localStore.krx_sess?.it === 600000);
 check(9, 'session started', !!sessionStore.krx_unlocked?.rawKeyHex);
 
-await until(() => app().querySelector('.balance-value'));
-check(10, 'live balance loaded', !!app().querySelector('.balance-value'), app().querySelector('.balance-value')?.textContent.trim());
-check(11, 'dashboard address matches preview', app().querySelector('.addr')?.textContent === addr);
+await until(() => app().querySelector('.balance-value'), apiUp ? 40 : 2);
+checkLive(10, 'live balance loaded',
+  () => !!app().querySelector('.balance-value'),
+  () => app().querySelector('.balance-value')?.textContent.trim());
+check(11, 'dashboard address matches preview', byId('address')?.textContent === addr);
+check('11a', 'API status indicator present', !!byId('api-status') && !!byId('api-status-text'));
+if (apiUp) {
+  check('11b', 'status dot green when API reachable',
+    byId('api-status').className.includes('online') && byId('api-status-text').textContent === 'online');
+} else {
+  await until(() => byId('api-status').className.includes('offline'), 10);
+  check('11b', 'status dot red when API unreachable',
+    byId('api-status').className.includes('offline') && byId('api-status-text').textContent === 'offline');
+}
 
 // --- multi-account: derive a second address from the same seed ---
-findBtn('＋ Add').click();
+byId('add-account-btn').click();
 await sleep(100);
-check(12, 'add-account chooser shown', app().textContent.includes('Add account'));
-findBtn('New address from current seed').click();
-await until(() => app().querySelectorAll('.account-select option').length === 2);
-const addr2 = app().querySelector('.addr')?.textContent;
+check(12, 'add-account chooser shown', !!byId('derive-btn') && !!byId('new-seed-btn') && !!byId('import-seed-btn'));
+byId('derive-btn').click();
+await until(() => byId('account-select')?.querySelectorAll('option').length === 2);
+const addr2 = byId('address')?.textContent;
 check(13, 'second account active with different address', addr2 !== addr && addr2?.startsWith('keryx:q'));
-check(14, 'switcher lists 2 accounts', app().querySelectorAll('.account-select option').length === 2);
+check(14, 'switcher lists 2 accounts', byId('account-select').querySelectorAll('option').length === 2);
 
 // --- switch back to account 1 ---
-const select = app().querySelector('.account-select');
+const select = byId('account-select');
 select.value = select.querySelectorAll('option')[0].value;
-select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-await until(() => app().querySelector('.addr')?.textContent === addr);
-check(15, 'switching back restores account 1 address', app().querySelector('.addr')?.textContent === addr);
+fire(select, 'change');
+await until(() => byId('address')?.textContent === addr);
+check(15, 'switching back restores account 1 address', byId('address')?.textContent === addr);
 
 // --- lock / unlock preserves all accounts under the one password ---
-findBtn('Lock').click();
+byId('lock-btn').click();
 await sleep(200);
-check(16, 'locked screen', app().textContent.includes('WALLET LOCKED'));
-const pwInput = app().querySelector('input[type=password]');
-pwInput.value = 'wrong-password';
-findBtn('Unlock').click();
+check(16, 'locked screen', app().textContent.includes('WALLET LOCKED') && !!byId('unlock-btn'));
+byId('unlock-pw').value = 'wrong-password';
+byId('unlock-btn').click();
 await until(() => app().textContent.includes('Wrong password'), 30);
 check(17, 'wrong password rejected', app().textContent.includes('Wrong password.'));
-pwInput.value = 'test-passphrase';
-findBtn('Unlock').click();
-await until(() => app().textContent.includes('Balance'), 30);
-check(18, 'unlock restores dashboard', app().textContent.includes('Balance'));
-check(19, 'both accounts survive lock/unlock', app().querySelectorAll('.account-select option').length === 2);
-check(20, 'active account preserved', app().querySelector('.addr')?.textContent === addr);
+byId('unlock-pw').value = 'test-passphrase';
+byId('unlock-btn').click();
+await until(() => !!byId('account-select'), 30);
+check(18, 'unlock restores dashboard', !!byId('account-select'));
+check(19, 'both accounts survive lock/unlock', byId('account-select').querySelectorAll('option').length === 2);
+check(20, 'active account preserved', byId('address')?.textContent === addr);
 
 // --- rename account ---
-findBtn('✎').click();
+byId('rename-btn').click();
 await sleep(50);
-const nameInput = app().querySelector('.account-row input[type=text]');
-check(21, 'rename input appears', !!nameInput && nameInput.value === 'Account 1');
-nameInput.value = 'Main';
-[...app().querySelectorAll('.account-row button')].find((b) => b.textContent === '✓').click();
-await until(() => [...app().querySelectorAll('.account-select option')].some((o) => o.textContent.startsWith('Main (')), 10);
-check(22, 'account renamed in switcher', [...app().querySelectorAll('.account-select option')][0]?.textContent.startsWith('Main ('));
+check(21, 'rename input appears', byId('rename-input')?.value === 'Account 1');
+byId('rename-input').value = 'Main';
+byId('rename-save-btn').click();
+await until(() => [...byId('account-select')?.querySelectorAll('option') ?? []].some((o) => o.textContent.startsWith('Main (')), 10);
+check(22, 'account renamed in switcher', [...byId('account-select').querySelectorAll('option')][0]?.textContent.startsWith('Main ('));
 check(23, 'rename persisted to store label', app().textContent.includes('Main — KRX address'));
 
 // --- settings page hides the destructive reset ---
-check(24, 'no Reset on dashboard, gear instead', !findBtn('Reset') && !!findBtn('⚙'));
-findBtn('⚙').click();
+check(24, 'no Reset on dashboard, settings button instead', !byId('reset-btn') && !!byId('settings-btn'));
+byId('settings-btn').click();
 await sleep(50);
-check(25, 'settings page opens', app().textContent.includes('Danger zone'));
-const resetBtn = findBtn('Reset wallet');
-check(26, 'reset disabled without confirmation text', resetBtn.disabled);
-const confirmInput = app().querySelector('.card.danger input[type=text]');
-confirmInput.value = 'RESET';
-confirmInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+check(25, 'settings page opens', app().textContent.includes('Danger zone') && !!byId('reset-btn'));
+check(26, 'reset disabled without confirmation text', byId('reset-btn').disabled);
+byId('reset-confirm-input').value = 'RESET';
+fire(byId('reset-confirm-input'), 'input');
 await sleep(50);
-check(27, 'reset enabled after typing RESET', !resetBtn.disabled);
-resetBtn.click();
-await until(() => !!findBtn('Create a new wallet'), 10);
-check(28, 'reset returns to first-run screen', !!findBtn('Create a new wallet'));
+check(27, 'reset enabled after typing RESET', !byId('reset-btn').disabled);
+byId('reset-btn').click();
+await until(() => !!byId('create-btn'), 10);
+check(28, 'reset returns to first-run screen', !!byId('create-btn'));
 check(29, 'vault and active id cleared', !localStore.krx_sess && !localStore.krx_active);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);
   process.exit(1);
 }
-console.log('\nAll checks passed');
+console.log(`\nAll checks passed${apiUp ? '' : ' (live-data checks skipped — API was unreachable)'}`);
 process.exit(0);
