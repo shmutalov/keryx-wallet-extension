@@ -1,0 +1,21 @@
+{
+  "name": "keryx-wallet-extension",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "test:e2e": "node scripts/popup-e2e.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Chrome extension wallet for the Keryx Network (KRX)",
+  "dependencies": {
+    "@scure/bip32": "2.2.0",
+    "@scure/bip39": "2.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "jsdom": "^29.1.1"
+  },
+  "type": "module"
+}
