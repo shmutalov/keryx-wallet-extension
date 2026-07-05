@@ -520,20 +520,28 @@ function renderSend() {
   });
   const destError = el('div', { class: 'error-text', style: 'display:none' }, 'Invalid keryx: address.');
   const suggest = el('div', { id: 'dest-suggest', class: 'suggest', style: 'display:none' });
-  const amountInput = el('input', { id: 'amount-input', type: 'number', placeholder: '0.001', min: '0', step: 'any' });
-  const feeInput = el('input', { id: 'fee-input', type: 'number', value: '0.3', min: '0.3', step: 'any' });
+  const amountInput = el('input', {
+    id: 'amount-input', type: 'text', inputmode: 'decimal', placeholder: '0.001',
+    autocomplete: 'off', spellcheck: 'false',
+  });
+  const feeInput = el('input', {
+    id: 'fee-input', type: 'text', inputmode: 'decimal', value: '0.3',
+    autocomplete: 'off', spellcheck: 'false',
+  });
   const feeError = el('div', { class: 'error-text', style: 'display:none' }, 'Minimum fee is 0.3 KRX.');
   const statusBox = el('div', { id: 'send-status', style: 'display:none' });
   const submit = el('button', { id: 'send-confirm-btn', class: 'btn', disabled: '' }, 'Send →');
 
   const destValid = () => isValidAddress(destInput.value.trim());
-  const feeSompi = () => parseKRX(feeInput.value || '0');
-  const amountSompi = () => parseKRX(amountInput.value || '0');
+  // accept both "0.3" and "0,3"
+  const toSompi = (v) => parseKRX((v || '0').trim().replace(',', '.'));
+  const feeSompi = () => toSompi(feeInput.value);
+  const amountSompi = () => toSompi(amountInput.value);
 
   function validate() {
     const dest = destInput.value.trim();
     destError.style.display = dest && !destValid() ? '' : 'none';
-    feeError.style.display = feeInput.value && feeSompi() < MIN_FEE_SOMPI ? '' : 'none';
+    feeError.style.display = feeInput.value && !(feeSompi() >= MIN_FEE_SOMPI) ? '' : 'none';
     const ok = !busy && destValid() && amountSompi() > 0 && feeSompi() >= MIN_FEE_SOMPI;
     if (ok) submit.removeAttribute('disabled');
     else submit.setAttribute('disabled', '');

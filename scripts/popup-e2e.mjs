@@ -120,20 +120,24 @@ check(7, 'dashboard rendered', !!byId('account-select') && app().textContent.inc
 check(8, 'vault persisted (v2, global password)', localStore.krx_sess?.v === 2 && localStore.krx_sess?.it === 600000);
 check(9, 'session started', !!sessionStore.krx_unlocked?.rawKeyHex);
 
-await until(() => app().querySelector('.balance-value'), apiUp ? 40 : 2);
-checkLive(10, 'live balance loaded',
-  () => !!app().querySelector('.balance-value'),
-  () => app().querySelector('.balance-value')?.textContent.trim());
+// The node can flap mid-run (e.g. during updates), so don't trust the t=0
+// probe here — assert the invariant instead: dot matches the actual outcome.
+await until(
+  () => app().querySelector('.balance-value') || byId('api-status').className.includes('offline'),
+  apiUp ? 40 : 4
+);
+const balLoaded = !!app().querySelector('.balance-value');
+if (balLoaded) {
+  check(10, 'live balance loaded', true, app().querySelector('.balance-value').textContent.trim());
+} else {
+  console.log('10. live balance loaded: SKIPPED (node unreachable during run)');
+}
 check(11, 'dashboard address matches preview', byId('address')?.textContent === addr);
 check('11a', 'API status indicator present', !!byId('api-status') && !!byId('api-status-text'));
-if (apiUp) {
-  check('11b', 'status dot green when API reachable',
-    byId('api-status').className.includes('online') && byId('api-status-text').textContent === 'online');
-} else {
-  await until(() => byId('api-status').className.includes('offline'), 10);
-  check('11b', 'status dot red when API unreachable',
-    byId('api-status').className.includes('offline') && byId('api-status-text').textContent === 'offline');
-}
+check('11b', `status dot ${balLoaded ? 'green after successful poll' : 'red when node unreachable'}`,
+  balLoaded
+    ? byId('api-status').className.includes('online') && byId('api-status-text').textContent === 'online'
+    : byId('api-status').className.includes('offline') && byId('api-status-text').textContent === 'offline');
 
 // --- multi-account: derive a second address from the same seed ---
 byId('add-account-btn').click();

@@ -396,6 +396,10 @@ textarea::placeholder {
   gap: 10px;
 }
 
+.send-row .field + .field {
+  margin-top: 0;
+}
+
 .amount-row {
   display: flex;
   gap: 6px;
