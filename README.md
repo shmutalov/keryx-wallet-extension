@@ -14,9 +14,10 @@ Private keys are derived and stored **only on your device** — the extension ta
 - **Balance dashboard** — live KRX balance (auto-refresh every 15 s), approximate USD value, UTXO count with consolidation hint, network DAA score, and a 3-row recent-transactions preview; a dedicated History screen paginates the full list (15 per page) with explorer links.
 - **Send KRX** — Kaspa-style transaction building and signing fully client-side: keyed blake2b-256 `TransactionSigningHash`, BIP340 Schnorr signatures, greedy largest-first UTXO selection with coinbase-maturity filtering, change back to self, broadcast via the public node.
 - **Address book & recents** — save `name → address` entries (managed from Settings or the Send screen); the destination field offers a picker with saved and recently-used addresses, filtered as you type.
+- **AI inference** — submit prompts to the Keryx Inference Oracle from a dedicated page: model picker with live miner counts, max-tokens slider, cost estimate (base + token surcharge + priority fee), escrowed AiRequest transaction signed locally, and a live feed with statuses (pending/responded/challenged/slashed) and IPFS-fetched results.
 - **Lock / auto-lock** — decrypted secrets live only in `chrome.storage.session` (in-memory); a background alarm enforces a 15-minute inactivity auto-lock. "Lock" keeps the encrypted vault; "Reset" (in Settings) removes it.
 
-Still planned: UTXO consolidation and AI inference queries (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — both flows are already specified there).
+Still planned: UTXO consolidation (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — the flow is already specified there).
 
 ## Install (Load unpacked)
 

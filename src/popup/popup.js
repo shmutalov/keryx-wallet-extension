@@ -14,7 +14,13 @@ import {
   shortAddress,
   DERIVATION_BASE,
 } from '../lib/keryx.js';
-import { buildTransferTx, MIN_FEE_SOMPI } from '../lib/tx.js';
+import {
+  buildTransferTx,
+  buildInferenceTx,
+  buildInferencePayload,
+  MIN_FEE_SOMPI,
+} from '../lib/tx.js';
+import { INFERENCE_MODELS, getModel, inferenceRewardSompi } from '../lib/models.js';
 import {
   getAddressBook,
   addBookEntry,
@@ -457,6 +463,299 @@ function renderSettings() {
       resetBtn
     )
   );
+}
+
+const ipfsCache = new Map(); // cid -> text | Promise
+
+/** AI inference: submit prompts on-chain (AiRequest) and watch the live feed. */
+function renderInference() {
+  const acct = activeAccount();
+  const { address } = state.wallet;
+
+  let availableSompi = null;
+  let capabilities = null; // null = unknown (endpoint unreachable)
+  let challengesByPrefix = new Map();
+  let busy = false;
+
+  const availLine = el('div', { class: 'balance-meta' }, 'Balance: …');
+  const modelSelect = el('select', { id: 'inf-model', class: 'account-select' });
+  for (const m of INFERENCE_MODELS) {
+    const opt = el('option', { value: m.key },
+      `${m.label} · from ${formatKRX(m.baseSompi)} KRX`);
+    if (m.key === 'gemma-3-4b') opt.setAttribute('selected', '');
+    modelSelect.append(opt);
+  }
+  const minersLine = el('div', { id: 'inf-miners', class: 'balance-meta' }, '');
+  const promptInput = el('textarea', {
+    id: 'inf-prompt', rows: '4', placeholder: 'Enter your query for the Keryx network…',
+  });
+  const charCount = el('span', { class: 'tx-count' }, '0 chars');
+  const tokensVal = el('span', { id: 'inf-tokens-val', style: 'color:var(--mx-bright)' }, '256');
+  const tokensSlider = el('input', {
+    id: 'inf-tokens', type: 'range', min: '64', max: '4096', step: '64', value: '256',
+  });
+  const feeInput = el('input', {
+    id: 'inf-fee', type: 'text', inputmode: 'decimal', value: '0.3',
+    autocomplete: 'off', spellcheck: 'false',
+  });
+  const totalLine = el('div', { id: 'inf-total', class: 'balance-meta' }, '');
+  const statusBox = el('div', { id: 'inf-status', style: 'display:none' });
+  const submit = el('button', { id: 'inf-submit', class: 'btn', disabled: '' }, 'Submit to network →');
+  const feedList = el('div', { id: 'inf-feed', class: 'stack' },
+    el('div', { class: 'loading' }, 'Loading…'));
+
+  const toSompi = (v) => parseKRX((v || '0').trim().replace(',', '.'));
+  const feeSompi = () => Math.max(MIN_FEE_SOMPI, toSompi(feeInput.value) || 0);
+  const maxTokens = () => Number(tokensSlider.value);
+  const rewardSompi = () => inferenceRewardSompi(modelSelect.value, maxTokens());
+  const totalSompi = () => rewardSompi() + feeSompi();
+
+  function minerInfo() {
+    if (!capabilities) return { count: null, pubkey: undefined }; // endpoint unreachable
+    const cap = capabilities.find((c) => c.model === modelSelect.value);
+    return { count: cap?.miner_count ?? 0, pubkey: cap?.miner_pubkeys?.[0] };
+  }
+
+  function refreshEstimate() {
+    const model = getModel(modelSelect.value);
+    const { count } = minerInfo();
+    totalLine.textContent =
+      `Total: ${formatKRX(totalSompi())} KRX (${formatKRX(model.baseSompi)} base + ` +
+      `${formatKRX(inferenceRewardSompi(modelSelect.value, maxTokens()) - model.baseSompi)} tokens + ` +
+      `${formatKRX(feeSompi())} fee)`;
+    if (count === null) minersLine.textContent = 'Miner availability unknown (node unreachable)';
+    else if (count === 0) minersLine.textContent = `⚠ No active miners for ${model.name} — request would stay pending, fees lost.`;
+    else minersLine.textContent = `${count} active miner${count > 1 ? 's' : ''} for this model`;
+    minersLine.style.color = count === 0 ? 'var(--mx-error)' : '';
+    validate();
+  }
+
+  function validate() {
+    const { count } = minerInfo();
+    const funded = availableSompi === null || availableSompi > totalSompi();
+    const ok = !busy && promptInput.value.trim().length > 0 && funded && count !== 0;
+    if (ok) submit.removeAttribute('disabled');
+    else submit.setAttribute('disabled', '');
+    availLine.style.color = availableSompi !== null && !funded ? 'var(--mx-error)' : '';
+  }
+
+  modelSelect.addEventListener('change', refreshEstimate);
+  feeInput.addEventListener('input', refreshEstimate);
+  tokensSlider.addEventListener('input', () => {
+    tokensVal.textContent = tokensSlider.value;
+    refreshEstimate();
+  });
+  promptInput.addEventListener('input', () => {
+    charCount.textContent = `${promptInput.value.length} chars`;
+    validate();
+  });
+  promptInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doSubmit();
+  });
+
+  function setStatus(kind, ...children) {
+    statusBox.className = kind === 'error' ? 'error-box' : 'success-box';
+    statusBox.replaceChildren(...children);
+    statusBox.style.display = '';
+  }
+
+  async function doSubmit() {
+    if (submit.disabled) return;
+    const prompt = promptInput.value.trim();
+    const model = getModel(modelSelect.value);
+    const fee = feeSompi();
+    const reward = rewardSompi();
+    busy = true;
+    validate();
+    statusBox.style.display = 'none';
+    try {
+      submit.textContent = '⏳ Loading UTXOs…';
+      const [utxos, info] = await Promise.all([
+        api.utxos(address, 400),
+        api.info().catch(() => null),
+      ]);
+      submit.textContent = '⚙ Signing…';
+      const payloadHex = buildInferencePayload(prompt, model.idHex, maxTokens(), reward, fee);
+      const { pubkey } = minerInfo();
+      const built = buildInferenceTx({
+        utxos,
+        changeAddress: address,
+        feeSompi: fee,
+        privateKeyHex: state.wallet.privateKeyHex,
+        currentDaaScore: info?.last_daa_score ?? 0,
+        payloadHex,
+        escrow: pubkey ? { pubkeyHex: pubkey, amountSompi: reward } : undefined,
+      });
+      submit.textContent = '📡 Broadcasting…';
+      const res = await api.broadcast(built.tx);
+      setStatus('success',
+        el('div', {}, 'Query submitted on-chain ✓'),
+        el('div', { class: 'tx-link' }, 'TX: ',
+          el('a', { href: `${API_BASE}/tx/${res.transaction_id}`, target: '_blank', rel: 'noreferrer' },
+            res.transaction_id)),
+        el('div', { class: 'hint', style: 'text-align:left;margin-top:4px' },
+          'Miners pick it up within the next blocks — watch the feed below.'));
+      promptInput.value = '';
+      charCount.textContent = '0 chars';
+      loadOverviewData();
+    } catch (e) {
+      setStatus('error', e instanceof Error ? e.message : String(e));
+    } finally {
+      busy = false;
+      submit.textContent = 'Submit to network →';
+      validate();
+    }
+  }
+  submit.addEventListener('click', doSubmit);
+
+  async function loadOverviewData() {
+    try {
+      const bal = await api.balance(address);
+      availableSompi = bal.balance_sompi ?? 0;
+      availLine.textContent = `Balance: ${formatKRX(availableSompi)} KRX`;
+    } catch {
+      availLine.textContent = 'Balance: — (node unreachable)';
+    }
+    validate();
+  }
+
+  function resultNode(item) {
+    const r = item.result;
+    if (!r) return null;
+    const box = el('div', { class: 'inf-result' });
+    const renderText = (text) => {
+      const long = text.length > 400;
+      const body = el('div', { class: `inf-result-text${long ? ' clamped' : ''}` }, text);
+      const kids = [body];
+      if (long) {
+        const toggle = el('button', { class: 'link-btn', style: 'font-size:10px;margin-top:2px' }, '▼ show more');
+        toggle.addEventListener('click', () => {
+          const clamped = body.classList.toggle('clamped');
+          toggle.textContent = clamped ? '▼ show more' : '▲ show less';
+        });
+        kids.push(toggle);
+      }
+      box.replaceChildren(...kids);
+    };
+    if (/^Qm/.test(r) && r.length === 46) {
+      box.replaceChildren(el('span', { class: 'hint' }, 'fetching response…'));
+      if (!ipfsCache.has(r)) ipfsCache.set(r, api.ipfsText(r));
+      Promise.resolve(ipfsCache.get(r)).then((text) => {
+        ipfsCache.set(r, text);
+        renderText(text);
+      }).catch(() => {
+        box.replaceChildren(el('a', {
+          href: `${API_BASE}/ipfs/${r}`, target: '_blank', rel: 'noreferrer', class: 'hint',
+        }, `${r.slice(0, 12)}…${r.slice(-6)} ↗`));
+      });
+    } else {
+      renderText(item.result_text || r);
+    }
+    return box;
+  }
+
+  async function loadFeed() {
+    try {
+      const [items, challenges] = await Promise.all([
+        api.inferences(10),
+        api.challenges(50).catch(() => []),
+      ]);
+      challengesByPrefix = new Map();
+      for (const c of challenges) {
+        if (!c.request_hash_hex) continue;
+        const key = c.request_hash_hex.slice(0, 16);
+        const existing = challengesByPrefix.get(key);
+        if (!existing || (c.fraud_proven && !existing.fraud_proven)) challengesByPrefix.set(key, c);
+      }
+      if (!items.length) {
+        feedList.replaceChildren(el('p', { class: 'hint', style: 'text-align:left' },
+          'No inference requests detected yet.'));
+        return;
+      }
+      feedList.replaceChildren(...items.map((item) => {
+        const challenge = item.payload_prefix ? challengesByPrefix.get(item.payload_prefix) : null;
+        const slashed = !!challenge?.fraud_proven;
+        const badge = slashed
+          ? el('span', { class: 'badge badge-bad' }, '⚡ SLASHED')
+          : challenge
+            ? el('span', { class: 'badge badge-warn' }, '⚠ CHALLENGED')
+            : item.result
+              ? el('span', { class: 'badge badge-ok' }, '✓ RESPONDED')
+              : el('span', { class: 'badge badge-pend' }, '⏳ PENDING');
+        const modelName = getModel(item.model)?.name ?? item.model;
+        return el('div', { class: 'inf-item' },
+          el('div', { class: 'inf-item-head' },
+            el('a', {
+              href: `${API_BASE}/tx/${item.tx_id}`, target: '_blank', rel: 'noreferrer',
+            }, `${item.tx_id.slice(0, 10)}…`),
+            el('span', { class: 'badge badge-model' }, modelName),
+            badge),
+          el('div', { class: 'inf-prompt' }, item.prompt),
+          resultNode(item));
+      }));
+    } catch {
+      /* feed is best-effort */
+    }
+  }
+
+  async function loadCapabilities() {
+    try {
+      capabilities = await api.capabilities();
+    } catch {
+      capabilities = null;
+    }
+    refreshEstimate();
+  }
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
+      el('h2', {}, 'AI Inference')
+    ),
+    el('div', { class: 'card' },
+      el('span', { class: 'label' }, `From ${acct.label}`),
+      el('div', { class: 'addr', style: 'font-size:10px' }, address),
+      availLine
+    ),
+    el('div', { class: 'card' },
+      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Model'), modelSelect),
+      minersLine
+    ),
+    el('div', { class: 'card' },
+      el('div', { class: 'field' },
+        el('span', { class: 'label' }, 'Prompt'),
+        promptInput),
+      el('div', { class: 'slider-row' },
+        el('span', { class: 'tx-count', style: 'white-space:nowrap' }, 'Max tokens: ', tokensVal),
+        tokensSlider,
+        charCount),
+      el('div', { class: 'send-row', style: 'margin-top:10px' },
+        el('div', { class: 'field', style: 'width:110px' },
+          el('span', { class: 'label' }, 'Priority fee (KRX)'),
+          feeInput),
+        el('div', { class: 'field', style: 'flex:1;justify-content:flex-end' },
+          totalLine))
+    ),
+    statusBox,
+    submit,
+    el('div', { class: 'card' },
+      el('div', { class: 'tx-head' },
+        el('span', { class: 'label', style: 'margin:0' }, 'Live inference feed'),
+        el('span', { class: 'tx-count' }, 'auto-refresh 5s')),
+      feedList
+    ),
+    el('p', { class: 'hint' },
+      'Prompt goes on-chain in an AiRequest tx · miners run the model · result lands on IPFS.')
+  );
+
+  refreshEstimate();
+  loadOverviewData();
+  loadCapabilities();
+  loadFeed();
+  state.refreshTimer = setInterval(() => {
+    loadFeed();
+    loadCapabilities();
+  }, 5000);
 }
 
 /** Dedicated paginated transaction history for the active account. */
@@ -1089,10 +1388,12 @@ function renderDashboard() {
       el('span', { class: 'label' }, 'Balance'),
       balanceBody,
       netRow),
-    el('button', { id: 'send-btn', class: 'btn', onclick: renderSend }, 'Send KRX →'),
+    el('div', { class: 'actions-row' },
+      el('button', { id: 'send-btn', class: 'btn', onclick: renderSend }, 'Send KRX →'),
+      el('button', { id: 'inference-btn', class: 'btn ghost', onclick: renderInference }, 'AI Inference →')),
     txCard,
     el('p', { class: 'hint', style: 'margin-top:2px' },
-      'Consolidate · AI inference — coming in the next release.')
+      'Consolidate — coming in the next release.')
   );
 
   loadOverview();

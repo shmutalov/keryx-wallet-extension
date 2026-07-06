@@ -57,7 +57,20 @@ export const api = {
   // { address, total_received_sompi, total_tx_count, transactions: [{ tx_id, amount_sompi, is_spend, daa_score, block_hash }] }
   addressTxs: (address, limit = 10, offset = 0) =>
     get(`/api/v1/addresses/${encodeURIComponent(address)}?limit=${limit}&offset=${offset}`),
-  // phase 2: broadcast signed transaction
+  // broadcast signed transaction
   broadcast: (tx) => post('/api/v1/broadcast', tx),
   market: () => get('/api/v1/market'),
+  // [{ model, model_id_hex, miner_count, last_seen_daa, miner_pubkeys: [hex32] }]
+  capabilities: () => get('/api/v1/capabilities'),
+  // [{ tx_id, model, prompt, max_tokens, inference_reward, priority_fee, daa_score,
+  //    block_hash, payload_prefix, result, result_text, result_block_hash }]
+  inferences: (limit = 20, offset = 0) => get(`/api/v1/infer?limit=${limit}&offset=${offset}`),
+  // [{ tx_id, request_hash_hex, fraud_proven }]
+  challenges: (limit = 50) => get(`/api/v1/challenges?limit=${limit}`),
+  // inference results that are IPFS CIDs resolve to text via the same host
+  ipfsText: async (cid) => {
+    const res = await doFetch(`/ipfs/${encodeURIComponent(cid)}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`IPFS fetch failed (${res.status})`);
+    return res.text();
+  },
 };

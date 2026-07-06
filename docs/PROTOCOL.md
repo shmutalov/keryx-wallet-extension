@@ -119,15 +119,39 @@ batch eligible UTXOs in groups of 80; each batch is a self-send of
 500 ms between waves, 4 s between rounds; ignore "already accepted" errors;
 skip batches whose value ≤ fee.
 
-## AI inference (phase 2, partially mapped)
+## AI inference (confirmed from keryx-labs.com/infer, 2026-07-06)
 
-- Inference txs use subnetwork id `03…00` and a binary payload (hex-encoded):
-  `bytes[0..32) = 32-byte id (hex arg; likely model/requester key), u32le max_tokens
-  (default 128) at 32, u64le inference_reward at 36 (default 0), u64le priority_fee at 44
-  (default 3e7), utf-8 prompt from 52`.
-- The inference builder creates an **escrow output** with script:
-  `<minimal-LE push of lock-blocks (default 36000)> 0xb1 0x20 <32-byte pubkey> 0xac`
-  (0xb1 = OP_CHECKLOCKTIMEVERIFY in Bitcoin numbering) paying the inference amount,
-  and selects UTXOs under a mass-like constraint `1e12/change + 1e12/amount ≤ 8e4`
-  (change is dropped into the fee when the constraint fails).
-- Results are polled via `GET /api/v1/inference/{id}`.
+**AiRequest transaction**: subnetwork id `03…00`, binary payload (hex-encoded):
+`bytes[0..32) = model_id`, `u32le max_tokens @32`, `u64le inference_reward @36`,
+`u64le priority_fee @44`, `utf-8 prompt from 52`.
+
+**Cost model** (all sompi): `priority_fee = max(3e7, user input)` — this is the tx fee;
+`inference_reward = model_base + 5e6 × ceil(max_tokens/64)` — paid into an escrow
+output to `capabilities[model].miner_pubkeys[0]` with script
+`<36000 LE minimal push> 0xb1(CLTV) 0x20 <miner x-only pubkey> 0xac(CHECKSIG)`.
+If `/capabilities` is unreachable the site submits without the escrow output.
+UI blocks submission when `miner_count === 0` for the chosen model.
+
+**Model registry** (hardcoded in the site bundle; base price in KRX):
+
+| key | model_id_hex | base |
+|---|---|---|
+| qwen3-1.7b | 4f21ddeb7d62bd2265bc54230d536ca3f1749927780f528c3c41fa2911df4d72 | 0.3 |
+| gemma-3-4b | ad50ad0bd461d8ab44efc0214989eb33291685ef4ade22a0f4f217d03266d837 | 0.5 |
+| dolphin-llama3-8b | 9421066a6400c98ba137114f7f4b7d4a2ddf13ab163a5de38c0184793af6313a | 1.5 |
+| qwen3-32b-abliterated | 65c6eb6fe18b9efd8060ab9d2d03bb9b01050a3b1378cbac000c5cc0acdc0d2a | 2.5 |
+| llama-3.3-70b-q2 | 6df46a78cbe4dc579f04dbd801f1a520b9eae28ce7b50c8da7874bfa3fb5108d | 4.0 |
+
+**Coin selection** (advanced builder): largest-first; select until
+`change > 0 && 1e12/change + (escrow ? 1e12/escrow : 0) ≤ 8e4`; insufficient if
+`sum ≤ fee + escrow`; if the final change violates the mass constraint it is
+folded into the fee (no change output).
+
+**Feed**: `GET /infer?limit=` items
+`{ tx_id, model, prompt, max_tokens, inference_reward, priority_fee, daa_score,
+block_hash, payload_prefix, result, result_text, result_block_hash }`.
+`result` of 46 chars starting `Qm` is an IPFS CID — fetch text from
+`https://keryx-labs.com/ipfs/{cid}`. Status: SLASHED / CHALLENGED via
+`GET /challenges?limit=` matching `challenge.request_hash_hex.slice(0,16) ===
+item.payload_prefix` (fraud_proven ⇒ slashed); else RESPONDED (has result) or
+PENDING. The site polls the feed every 5 s.

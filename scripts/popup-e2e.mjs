@@ -74,6 +74,20 @@ const MOCK_TXS = Array.from({ length: 20 }, (_, i) => ({
   amount_sompi: (i + 1) * 10000000,
   is_spend: i % 3 === 0,
 }));
+const GEMMA_ID = 'ad50ad0bd461d8ab44efc0214989eb33291685ef4ade22a0f4f217d03266d837';
+const MINER_PUB = '22'.repeat(32);
+const MOCK_CAPABILITIES = [
+  { model: 'gemma-3-4b', model_id_hex: GEMMA_ID, miner_count: 3, miner_pubkeys: [MINER_PUB] },
+];
+const MOCK_INFERENCES = [
+  { tx_id: 'cd'.repeat(32), model: 'gemma-3-4b', prompt: 'Answered question', max_tokens: 128,
+    inference_reward: 60000000, priority_fee: 30000000, daa_score: 100, block_hash: 'ef'.repeat(32),
+    payload_prefix: 'aa11'.repeat(4), result_text: 'The answer is 42.', result: 'raw' },
+  { tx_id: 'ce'.repeat(32), model: 'gemma-3-4b', prompt: 'Pending question', max_tokens: 128,
+    inference_reward: 60000000, priority_fee: 30000000, daa_score: 101, block_hash: 'ef'.repeat(32),
+    payload_prefix: 'bb22'.repeat(4), result: null },
+];
+let mockBalance = false;
 let broadcastBody = null;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
@@ -84,6 +98,18 @@ globalThis.fetch = async (url, init) => {
   if (u.endsWith('/broadcast')) {
     broadcastBody = JSON.parse(init.body);
     return new Response(JSON.stringify({ transaction_id: 'e2e0'.repeat(16) }), { status: 200 });
+  }
+  if (u.endsWith('/capabilities')) {
+    return new Response(JSON.stringify(MOCK_CAPABILITIES), { status: 200 });
+  }
+  if (u.includes('/infer?')) {
+    return new Response(JSON.stringify(MOCK_INFERENCES), { status: 200 });
+  }
+  if (u.includes('/challenges?')) {
+    return new Response(JSON.stringify([]), { status: 200 });
+  }
+  if (mockBalance && u.endsWith('/balance')) {
+    return new Response(JSON.stringify({ balance_sompi: 10000000000 }), { status: 200 });
   }
   if (u.includes('/addresses/') && u.includes('?limit=') && !u.includes('/utxos')) {
     const limit = Number(new URL(u).searchParams.get('limit'));
@@ -243,6 +269,43 @@ check('15i', 'broadcast tx pays 1.5 KRX to picked address with change - fee',
     i.sequence === '18446744073709551615'));
 check('15j', 'destination saved to recents', localStore.krx_recent?.[0]?.address === addr2);
 check('15k', 'no save-to-book offer for known address', !byId('save-dest-btn'));
+
+app().querySelector('.link-btn').click(); // back to dashboard
+await until(() => !!byId('lock-btn'), 10);
+
+// --- AI inference: dedicated page, cost math, escrowed AiRequest broadcast ---
+mockBalance = true;
+byId('inference-btn').click();
+await sleep(100);
+check('15l', 'inference page opens', !!byId('inf-model') && !!byId('inf-submit') && !!byId('inf-prompt'));
+check('15m', 'model picker lists 5 models, gemma default',
+  byId('inf-model').querySelectorAll('option').length === 5 && byId('inf-model').value === 'gemma-3-4b');
+await until(() => byId('inf-miners')?.textContent.includes('3 active miners'), 20);
+check('15n', 'live miner count shown from capabilities', byId('inf-miners').textContent.includes('3 active miners'));
+await until(() => app().textContent.includes('Balance: 100 KRX'), 20);
+byId('inf-prompt').value = 'What is Keryx?';
+fire(byId('inf-prompt'), 'input');
+await sleep(50);
+check('15o', 'cost estimate: 0.5 base + 0.2 tokens + 0.3 fee = 1 KRX',
+  byId('inf-total').textContent.includes('Total: 1 KRX'));
+check('15p', 'submit enabled with prompt + funds + miners', !byId('inf-submit').disabled);
+broadcastBody = null;
+byId('inf-submit').click();
+await until(() => byId('inf-status')?.className === 'success-box', 30);
+check('15q', 'AiRequest submitted, tx id shown', byId('inf-status').textContent.includes('e2e0'));
+const promptHex = Buffer.from('What is Keryx?', 'utf8').toString('hex');
+const escrowOut = broadcastBody?.outputs?.find((o) => o.amount === 70000000);
+check('15r', 'broadcast: inference subnetwork, model-id payload with prompt, CLTV escrow to miner',
+  broadcastBody?.subnetwork_id === '03' + '0'.repeat(38) &&
+  broadcastBody?.payload?.startsWith(GEMMA_ID) &&
+  broadcastBody?.payload?.endsWith(promptHex) &&
+  escrowOut?.script_public_key === `02a08cb120${MINER_PUB}ac`);
+await until(() => byId('inf-feed')?.querySelectorAll('.inf-item').length === 2, 20);
+check('15s', 'live feed renders responded + pending items with badges',
+  byId('inf-feed').textContent.includes('✓ RESPONDED') &&
+  byId('inf-feed').textContent.includes('⏳ PENDING') &&
+  byId('inf-feed').textContent.includes('The answer is 42.'));
+mockBalance = false;
 
 app().querySelector('.link-btn').click(); // back to dashboard
 await until(() => !!byId('lock-btn'), 10);

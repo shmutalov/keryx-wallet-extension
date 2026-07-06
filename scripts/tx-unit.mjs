@@ -1,7 +1,17 @@
 // Unit tests for the transaction builder/signer (no network needed).
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { deriveWallet, addressToScriptPublicKey, hexToBytes } from '../src/lib/keryx.js';
-import { buildTransferTx, transactionSigningHash, spendableUtxos, MIN_FEE_SOMPI } from '../src/lib/tx.js';
+import {
+  buildTransferTx,
+  buildInferenceTx,
+  buildInferencePayload,
+  escrowScriptPublicKey,
+  transactionSigningHash,
+  spendableUtxos,
+  MIN_FEE_SOMPI,
+  INFERENCE_SUBNETWORK_ID,
+} from '../src/lib/tx.js';
+import { inferenceRewardSompi, getModel } from '../src/lib/models.js';
 
 let failures = 0;
 let n = 0;
@@ -117,6 +127,67 @@ check('bad destination address throws', throws(() => buildTransferTx({
   amountSompi: 1000, feeSompi: MIN_FEE_SOMPI,
   changeAddress: sender.address, privateKeyHex: sender.privateKeyHex, currentDaaScore: daa,
 }), 'Invalid'));
+
+// --- inference payload encoding ---
+const model = getModel('gemma-3-4b');
+const reward = inferenceRewardSompi('gemma-3-4b', 256);
+check('token surcharge math: 0.5 base + 4*0.05', reward === 50000000 + 4 * 5000000);
+const payloadHex = buildInferencePayload('Hello Keryx', model.idHex, 256, reward, MIN_FEE_SOMPI);
+const pl = hexToBytes(payloadHex);
+const dv = new DataView(pl.buffer);
+check('payload: model id at [0..32)', payloadHex.startsWith(model.idHex));
+check('payload: u32le max_tokens @32', dv.getUint32(32, true) === 256);
+check('payload: u64le reward @36', dv.getBigUint64(36, true) === BigInt(reward));
+check('payload: u64le priority fee @44', dv.getBigUint64(44, true) === BigInt(MIN_FEE_SOMPI));
+check('payload: utf-8 prompt @52', new TextDecoder().decode(pl.slice(52)) === 'Hello Keryx');
+
+// --- escrow script ---
+const minerPub = '22'.repeat(32);
+const escrowScript = escrowScriptPublicKey(minerPub);
+// 36000 = 0x8CA0 -> minimal LE push [a0, 8c], CLTV(0xb1), push32 pubkey, CHECKSIG(0xac)
+check('escrow script: <36000> CLTV <pubkey> CHECKSIG', escrowScript === `02a08cb120${minerPub}ac`);
+
+// --- inference tx: escrow + change, non-native subnetwork ---
+const inf = buildInferenceTx({
+  utxos: [utxo('a', 5_00000000), utxo('b', 2_00000000)],
+  changeAddress: sender.address,
+  feeSompi: MIN_FEE_SOMPI,
+  privateKeyHex: sender.privateKeyHex,
+  currentDaaScore: daa,
+  payloadHex,
+  escrow: { pubkeyHex: minerPub, amountSompi: reward },
+});
+check('inference tx uses inference subnetwork + payload', inf.tx.subnetwork_id === INFERENCE_SUBNETWORK_ID && inf.tx.payload === payloadHex);
+check('escrow output pays reward to escrow script',
+  inf.tx.outputs.some((o) => o.amount === reward && o.script_public_key === escrowScript));
+check('change returns to self', inf.tx.outputs.some(
+  (o) => o.script_public_key === addressToScriptPublicKey(sender.address) &&
+         o.amount === inf.totalIn - reward - MIN_FEE_SOMPI));
+check('inference signatures verify', inf.tx.inputs.every((inp, i) =>
+  schnorr.verify(hexToBytes(inp.signature_script).slice(1, 65),
+    transactionSigningHash(inf.unsigned, i), xOnlyPub)));
+
+// --- mass constraint: tiny change gets folded into the fee ---
+const tiny = buildInferenceTx({
+  utxos: [utxo('a', reward + MIN_FEE_SOMPI + 1000)], // change of 1000 sompi -> 1e12/1000 >> 8e4
+  changeAddress: sender.address,
+  feeSompi: MIN_FEE_SOMPI,
+  privateKeyHex: sender.privateKeyHex,
+  currentDaaScore: daa,
+  payloadHex,
+  escrow: { pubkeyHex: minerPub, amountSompi: reward },
+});
+check('tiny change folded into fee (no change output)',
+  tiny.tx.outputs.length === 1 && tiny.tx.outputs[0].amount === reward && tiny.fee === MIN_FEE_SOMPI + 1000);
+
+check('inference insufficient funds throws', throws(() => buildInferenceTx({
+  utxos: [utxo('a', 1000)],
+  changeAddress: sender.address,
+  feeSompi: MIN_FEE_SOMPI,
+  privateKeyHex: sender.privateKeyHex,
+  payloadHex,
+  escrow: { pubkeyHex: minerPub, amountSompi: reward },
+}), 'Insufficient funds'));
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

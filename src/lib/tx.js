@@ -9,8 +9,12 @@ import { schnorr } from '@noble/curves/secp256k1.js';
 import { addressToScriptPublicKey, hexToBytes, bytesToHex } from './keryx.js';
 
 export const NATIVE_SUBNETWORK_ID = '0000000000000000000000000000000000000000';
+export const INFERENCE_SUBNETWORK_ID = '0300000000000000000000000000000000000000';
 export const MIN_FEE_SOMPI = 30000000; // 0.3 KRX
 export const COINBASE_MATURITY_DAA = 1000;
+export const ESCROW_LOCK_BLOCKS = 36000;
+// mass constraint used by the official wallet: 1e12/change + 1e12/escrow <= 8e4
+const MASS_LIMIT = 80000;
 
 const MAX_SEQUENCE = 18446744073709551615n;
 const SIGHASH_KEY = new TextEncoder().encode('TransactionSigningHash');
@@ -179,8 +183,13 @@ export function buildTransferTx({
     payload,
   };
 
+  const tx = signTransaction(unsigned, outputs, subnetworkId, payloadHex, privateKeyHex);
+  return { tx, unsigned, totalIn: sum, totalOut: amountSompi, fee: feeSompi, change };
+}
+
+function signTransaction(unsigned, outputs, subnetworkId, payloadHex, privateKeyHex) {
   const privKey = hexToBytes(privateKeyHex);
-  const tx = {
+  return {
     version: 0,
     inputs: unsigned.inputs.map((inp, i) => {
       const sig = schnorr.sign(transactionSigningHash(unsigned, i), privKey);
@@ -202,6 +211,138 @@ export function buildTransferTx({
     gas: 0,
     payload: payloadHex,
   };
+}
 
-  return { tx, unsigned, totalIn: sum, totalOut: amountSompi, fee: feeSompi, change };
+// --- AI inference (AiRequest transactions) ------------------------------------
+
+/**
+ * Binary AiRequest payload, hex-encoded:
+ * [0..32) model id, u32le max_tokens @32, u64le reward @36, u64le priority fee @44,
+ * utf-8 prompt from 52.
+ */
+export function buildInferencePayload(prompt, modelIdHex, maxTokens = 128, rewardSompi = 0, priorityFeeSompi = MIN_FEE_SOMPI) {
+  const promptBytes = new TextEncoder().encode(prompt);
+  const buf = new ArrayBuffer(52 + promptBytes.length);
+  const view = new DataView(buf);
+  const arr = new Uint8Array(buf);
+  arr.set(hexToBytes(modelIdHex), 0);
+  view.setUint32(32, maxTokens, true);
+  view.setBigUint64(36, BigInt(safeAmount(rewardSompi, 'inference reward')), true);
+  view.setBigUint64(44, BigInt(safeAmount(priorityFeeSompi, 'priority fee')), true);
+  arr.set(promptBytes, 52);
+  return bytesToHex(arr);
+}
+
+/**
+ * Escrow script paying the executing miner, refundable to them only after the
+ * lock: <lockBlocks LE minimal push> OP_CHECKLOCKTIMEVERIFY OP_DATA_32 <x-only pubkey> OP_CHECKSIG
+ */
+export function escrowScriptPublicKey(pubkeyHex, lockBlocks = ESCROW_LOCK_BLOCKS) {
+  const pubkey = hexToBytes(pubkeyHex);
+  const lockBytes = [];
+  let v = lockBlocks;
+  while (v > 0) {
+    lockBytes.push(v & 255);
+    v = Math.floor(v / 256);
+  }
+  const out = new Uint8Array(1 + lockBytes.length + 1 + 1 + 32 + 1);
+  let i = 0;
+  out[i++] = lockBytes.length;
+  for (const b of lockBytes) out[i++] = b;
+  out[i++] = 0xb1; // OP_CHECKLOCKTIMEVERIFY
+  out[i++] = 0x20; // OP_DATA_32
+  out.set(pubkey, i);
+  i += 32;
+  out[i++] = 0xac; // OP_CHECKSIG
+  return bytesToHex(out);
+}
+
+/**
+ * Build and sign a payload-carrying transaction (AiRequest), faithful port of
+ * the official wallet's advanced builder: self-change plus an optional escrow
+ * output, with the change either kept (if the mass constraint allows) or
+ * folded into the fee.
+ */
+export function buildInferenceTx({
+  utxos,
+  changeAddress,
+  feeSompi,
+  privateKeyHex,
+  currentDaaScore = 0,
+  payloadHex = '',
+  subnetworkId = INFERENCE_SUBNETWORK_ID,
+  escrow, // { pubkeyHex, amountSompi } | undefined
+}) {
+  if (!Number.isSafeInteger(feeSompi) || feeSompi < 0) throw new Error('Invalid fee');
+  const escrowAmount = escrow?.amountSompi ?? 0;
+  const need = feeSompi + escrowAmount;
+  const escrowMass = escrowAmount > 0 ? 1e12 / escrowAmount : 0;
+
+  const candidates = spendableUtxos(utxos, currentDaaScore).sort(
+    (a, b) => b.amount_sompi - a.amount_sompi
+  );
+  const selected = [];
+  let sum = 0;
+  for (const u of candidates) {
+    selected.push(u);
+    sum += u.amount_sompi;
+    const change = sum - need;
+    if (change > 0 && 1e12 / change + escrowMass <= MASS_LIMIT) break;
+  }
+  if (sum <= need) {
+    throw new Error(`Insufficient funds: need more than ${need} sompi across your UTXOs (have ${sum})`);
+  }
+  safeAmount(sum, 'total input sum');
+
+  let change = sum - need;
+  // change too small to satisfy the mass limit -> fold it into the fee
+  const dropChange = escrowAmount > 0 && 1e12 / change + escrowMass > MASS_LIMIT;
+  const extraFee = dropChange ? change : 0;
+  if (dropChange) change = 0;
+
+  const outputs = [];
+  if (!dropChange) {
+    outputs.push({
+      amount: change,
+      script_version: 0,
+      script_public_key: addressToScriptPublicKey(changeAddress),
+    });
+  }
+  if (escrow) {
+    outputs.push({
+      amount: escrowAmount,
+      script_version: 0,
+      script_public_key: escrowScriptPublicKey(escrow.pubkeyHex),
+    });
+  }
+
+  const payload = payloadHex ? hexToBytes(payloadHex) : new Uint8Array(0);
+  const unsigned = {
+    version: 0,
+    inputs: selected.map((u) => ({
+      transaction_id: u.transaction_id,
+      index: u.index,
+      sequence: MAX_SEQUENCE,
+      sig_op_count: 1,
+      utxo: {
+        amount_sompi: u.amount_sompi,
+        script_version: u.script_version,
+        script_public_key: u.script_public_key,
+      },
+    })),
+    outputs,
+    lock_time: 0n,
+    subnetwork_id: subnetworkId,
+    gas: 0n,
+    payload,
+  };
+
+  const tx = signTransaction(unsigned, outputs, subnetworkId, payloadHex, privateKeyHex);
+  return {
+    tx,
+    unsigned,
+    totalIn: sum,
+    totalOut: change + escrowAmount,
+    fee: feeSompi + extraFee,
+  };
 }
