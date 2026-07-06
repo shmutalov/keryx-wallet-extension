@@ -4,11 +4,13 @@ export const API_BASE = 'https://keryx-labs.com';
 
 async function doFetch(path, init) {
   try {
-    return await fetch(`${API_BASE}${path}`, init);
+    // Timeout matters: a flapping node can accept the TCP connection and then
+    // stall indefinitely, which would leave the UI in "checking…" forever.
+    return await fetch(`${API_BASE}${path}`, { ...init, signal: AbortSignal.timeout(15000) });
   } catch {
-    // TCP-level failure (node down/updating, DNS, offline) — fetch gives an
-    // opaque TypeError; translate it for the UI. The dashboard auto-refresh
-    // retries every 15 s.
+    // TCP-level failure or timeout (node down/updating, DNS, offline) — fetch
+    // gives an opaque TypeError; translate it for the UI. The dashboard
+    // auto-refresh retries every 15 s.
     throw new Error('Keryx node unreachable — it may be restarting or updating. Will retry shortly.');
   }
 }
