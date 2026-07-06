@@ -125,6 +125,15 @@ function copyButton(getText, label = '⧉', copiedLabel = '✓', id) {
   return btn;
 }
 
+function txRow(t) {
+  const spend = t.is_spend === true;
+  const amount = formatKRX(Math.abs(t.amount_sompi ?? 0));
+  const idText = t.tx_id.length <= 20 ? t.tx_id : `${t.tx_id.slice(0, 14)}…${t.tx_id.slice(-8)}`;
+  return el('div', { class: 'tx-row' },
+    el('a', { href: `${API_BASE}/tx/${t.tx_id}`, target: '_blank', rel: 'noreferrer' }, idText),
+    el('span', { class: `tx-amount ${spend ? 'out' : 'in'}` }, `${spend ? '−' : '+'}${amount} KRX`));
+}
+
 function passwordFields() {
   const password = el('input', { id: 'pw-input', type: 'password', placeholder: '••••••••' });
   const confirm = el('input', { id: 'pw-confirm', type: 'password', placeholder: '••••••••' });
@@ -448,6 +457,66 @@ function renderSettings() {
       resetBtn
     )
   );
+}
+
+/** Dedicated paginated transaction history for the active account. */
+function renderHistory() {
+  const acct = activeAccount();
+  const { address } = state.wallet;
+  const PAGE = 15;
+  let page = 0;
+
+  const countEl = el('span', { class: 'tx-count' }, '');
+  const listBox = el('div', { id: 'hist-list', class: 'tx-list' });
+  const pagerBox = el('div', {});
+
+  async function load() {
+    listBox.replaceChildren(el('div', { class: 'loading' }, 'Loading…'));
+    try {
+      const res = await api.addressTxs(address, PAGE, PAGE * page);
+      const txs = res.transactions ?? [];
+      const total = res.total_tx_count ?? 0;
+      countEl.textContent = `${total.toLocaleString('en-US')} txs`;
+      if (!txs.length) {
+        listBox.replaceChildren(el('p', { class: 'hint', style: 'text-align:left;padding:8px 0' }, 'No transactions yet.'));
+        pagerBox.replaceChildren();
+        return;
+      }
+      listBox.replaceChildren(...txs.map(txRow));
+      const pages = Math.max(1, Math.ceil(total / PAGE));
+      if (pages > 1) {
+        const prev = el('button', { id: 'hist-prev', class: 'btn-small' }, '← Prev');
+        const next = el('button', { id: 'hist-next', class: 'btn-small' }, 'Next →');
+        if (page === 0) prev.setAttribute('disabled', '');
+        if (page >= pages - 1) next.setAttribute('disabled', '');
+        prev.addEventListener('click', () => { page = Math.max(0, page - 1); load(); });
+        next.addEventListener('click', () => { page = Math.min(pages - 1, page + 1); load(); });
+        pagerBox.replaceChildren(el('div', { class: 'pager' }, prev,
+          el('span', { id: 'hist-page' }, `Page ${page + 1} / ${pages}`), next));
+      } else {
+        pagerBox.replaceChildren();
+      }
+    } catch (e) {
+      listBox.replaceChildren(el('div', { class: 'error-box' },
+        e instanceof Error ? e.message : String(e)));
+      pagerBox.replaceChildren();
+    }
+  }
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
+      el('h2', {}, 'Transactions')
+    ),
+    el('div', { class: 'card' },
+      el('div', { class: 'tx-head' },
+        el('span', { class: 'label', style: 'margin:0' }, `${acct.label} — …${address.slice(-8)}`),
+        countEl),
+      listBox,
+      pagerBox
+    )
+  );
+  load();
 }
 
 /**
@@ -917,41 +986,27 @@ function renderDashboard() {
     }
   }
 
-  let txPage = 0;
+  // compact preview: 3 most recent, full list lives on the History screen
   async function loadTxs() {
     try {
-      const res = await api.addressTxs(address, 10, 10 * txPage);
+      const res = await api.addressTxs(address, 3, 0);
       const txs = res.transactions ?? [];
       const total = res.total_tx_count ?? 0;
       if (total === 0 && txs.length === 0) {
         txCard.style.display = 'none';
         return;
       }
-      const pages = Math.max(1, Math.ceil(total / 10));
-      const rows = txs.map((t) => {
-        const spend = t.is_spend === true;
-        const amount = formatKRX(Math.abs(t.amount_sompi ?? 0));
-        const idText = t.tx_id.length <= 20 ? t.tx_id : `${t.tx_id.slice(0, 14)}…${t.tx_id.slice(-8)}`;
-        return el('div', { class: 'tx-row' },
-          el('a', { href: `${API_BASE}/tx/${t.tx_id}`, target: '_blank', rel: 'noreferrer' }, idText),
-          el('span', { class: `tx-amount ${spend ? 'out' : 'in'}` },
-            `${spend ? '−' : '+'}${amount} KRX`));
-      });
       const children = [
         el('div', { class: 'tx-head' },
-          el('span', { class: 'label', style: 'margin:0' }, 'Transaction history'),
+          el('span', { class: 'label', style: 'margin:0' }, 'Recent transactions'),
           el('span', { class: 'tx-count' }, `${total.toLocaleString('en-US')} txs`)),
-        el('div', { class: 'tx-list' }, rows),
+        el('div', { class: 'tx-list' }, txs.map(txRow)),
       ];
-      if (pages > 1) {
-        const prev = el('button', { class: 'btn-small' }, '← Prev');
-        const next = el('button', { class: 'btn-small' }, 'Next →');
-        if (txPage === 0) prev.setAttribute('disabled', '');
-        if (txPage >= pages - 1) next.setAttribute('disabled', '');
-        prev.addEventListener('click', () => { txPage = Math.max(0, txPage - 1); loadTxs(); });
-        next.addEventListener('click', () => { txPage = Math.min(pages - 1, txPage + 1); loadTxs(); });
-        children.push(el('div', { class: 'pager' }, prev,
-          el('span', {}, `Page ${txPage + 1} / ${pages}`), next));
+      if (total > 3) {
+        children.push(el('button', {
+          id: 'history-btn', class: 'link-btn', style: 'margin-top:8px',
+          onclick: renderHistory,
+        }, `View all (${total.toLocaleString('en-US')}) →`));
       }
       txCard.replaceChildren(...children);
       txCard.style.display = '';

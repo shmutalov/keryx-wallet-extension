@@ -69,6 +69,11 @@ const MOCK_UTXOS = [
   { transaction_id: 'b'.repeat(64), index: 1, amount_sompi: 3_00000000, script_version: 0,
     script_public_key: '20' + '11'.repeat(32) + 'ac', block_daa_score: 100, is_coinbase: false },
 ];
+const MOCK_TXS = Array.from({ length: 20 }, (_, i) => ({
+  tx_id: i.toString(16).padStart(2, '0').repeat(32),
+  amount_sompi: (i + 1) * 10000000,
+  is_spend: i % 3 === 0,
+}));
 let broadcastBody = null;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
@@ -79,6 +84,14 @@ globalThis.fetch = async (url, init) => {
   if (u.endsWith('/broadcast')) {
     broadcastBody = JSON.parse(init.body);
     return new Response(JSON.stringify({ transaction_id: 'e2e0'.repeat(16) }), { status: 200 });
+  }
+  if (u.includes('/addresses/') && u.includes('?limit=') && !u.includes('/utxos')) {
+    const limit = Number(new URL(u).searchParams.get('limit'));
+    const offset = Number(new URL(u).searchParams.get('offset') ?? 0);
+    return new Response(JSON.stringify({
+      total_tx_count: MOCK_TXS.length,
+      transactions: MOCK_TXS.slice(offset, offset + limit),
+    }), { status: 200 });
   }
   return realFetch(url, init);
 };
@@ -141,6 +154,21 @@ check('11b', `status dot ${balLoaded ? 'green after successful poll' : 'red when
   balLoaded
     ? byId('api-status').className.includes('online') && byId('api-status-text').textContent === 'online'
     : byId('api-status').className.includes('offline') && byId('api-status-text').textContent === 'offline');
+
+// --- history: compact dashboard preview + dedicated paginated screen ---
+await until(() => !!byId('history-btn'), 20);
+check('11c', 'dashboard preview capped at 3 rows with view-all link',
+  app().querySelectorAll('.tx-row').length === 3 && byId('history-btn').textContent.includes('20'));
+byId('history-btn').click();
+await until(() => byId('hist-list')?.querySelectorAll('.tx-row').length === 15, 20);
+check('11d', 'history screen shows 15 per page', byId('hist-list').querySelectorAll('.tx-row').length === 15);
+check('11e', 'pager shows 2 pages', byId('hist-page')?.textContent === 'Page 1 / 2' && byId('hist-prev').disabled);
+byId('hist-next').click();
+await until(() => byId('hist-list')?.querySelectorAll('.tx-row').length === 5, 20);
+check('11f', 'page 2 shows remaining 5, next disabled',
+  byId('hist-list').querySelectorAll('.tx-row').length === 5 && byId('hist-next').disabled);
+app().querySelector('.link-btn').click(); // back to dashboard
+await until(() => !!byId('lock-btn'), 10);
 
 // --- multi-account: derive a second address from the same seed ---
 byId('add-account-btn').click();

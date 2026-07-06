@@ -27,6 +27,60 @@
   padding: 0;
 }
 
+/* --- themed scrollbars (green thumb + arrows on the dark track) --- */
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050705;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--mx-fill);
+  border-radius: 5px;
+  border: 2px solid #050705;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--mx-cta);
+}
+
+::-webkit-scrollbar-corner {
+  background: #050705;
+}
+
+::-webkit-scrollbar-button:single-button {
+  height: 11px;
+  width: 11px;
+  background-color: #050705;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 7px;
+}
+
+::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M5 1.5 9 8 1 8Z' fill='%232ee358'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M5 8.5 1 2 9 2Z' fill='%232ee358'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M1.5 5 8 1 8 9Z' fill='%232ee358'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M8.5 5 2 9 2 1Z' fill='%232ee358'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:hover {
+  background-color: var(--mx-border);
+}
+
 html,
 body {
   width: 375px;
