@@ -34,5 +34,6 @@ Keryx Wallet is community-built software provided as-is. Always back up your see
 - alarms — run the 15-minute inactivity auto-lock timer in the background service worker
 - clipboardWrite — copy addresses and the seed phrase to the clipboard on explicit user click
 - host permission https://keryx-labs.com/* — read balances/UTXOs/history from the public Keryx node API and broadcast user-signed transactions
+- content scripts on all sites — inject the standard `window.keryx` wallet-provider API (same pattern as other crypto-wallet extensions) so Keryx applications can request payments and signatures; the script does not read or modify page content, and a site learns nothing until the user approves its connection request in a wallet-controlled popup. Details: https://github.com/shmutalov/keryx-wallet-extension/blob/master/docs/PROVIDER.md
 
 Data collection: none. All user data stays on-device; no remote logging or analytics.

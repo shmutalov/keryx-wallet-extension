@@ -18,6 +18,18 @@ const MASS_LIMIT = 80000;
 
 const MAX_SEQUENCE = 18446744073709551615n;
 const SIGHASH_KEY = new TextEncoder().encode('TransactionSigningHash');
+const MESSAGE_KEY = new TextEncoder().encode('PersonalMessageSigningHash');
+
+// Kaspa sighash types. Only SIGHASH_ALL is used by the official wallet and is
+// network-proven; the other types follow the Kaspa consensus rules verbatim
+// (needed for HTLC/P2SH flows initiated by dApps through the provider).
+export const SIGHASH_ALL = 0x01;
+export const SIGHASH_NONE = 0x02;
+export const SIGHASH_SINGLE = 0x04;
+export const SIGHASH_ANYONECANPAY = 0x80;
+const SIGHASH_MASK = 0x07;
+const VALID_SIGHASH_TYPES = new Set([0x01, 0x02, 0x04, 0x81, 0x82, 0x84]);
+const ZERO_HASH = new Uint8Array(32);
 
 const keyedHash = () => blake2b.create({ key: SIGHASH_KEY, dkLen: 32 });
 
@@ -53,26 +65,48 @@ function lengthPrefixed(bytes) {
   return out;
 }
 
-/** Kaspa TransactionSigningHash for input `idx` of the unsigned tx (SIGHASH_ALL). */
-export function transactionSigningHash(tx, idx) {
+/**
+ * Kaspa TransactionSigningHash for input `idx` of the unsigned tx.
+ * `hashType` follows the Kaspa consensus reused-values rules: ANYONECANPAY
+ * zeroes the prevouts/sequences/sig-op-counts hashes, NONE/SINGLE zero or
+ * narrow the outputs hash, and the type byte itself is the final update.
+ */
+export function transactionSigningHash(tx, idx, hashType = SIGHASH_ALL) {
+  if (!VALID_SIGHASH_TYPES.has(hashType)) {
+    throw new Error(`Invalid sighash type 0x${hashType.toString(16)} — allowed: ALL, NONE, SINGLE, each optionally | ANYONECANPAY`);
+  }
+  const anyoneCanPay = (hashType & SIGHASH_ANYONECANPAY) !== 0;
+  const base = hashType & SIGHASH_MASK;
   const input = tx.inputs[idx];
   const h = keyedHash();
   h.update(u16(tx.version));
 
-  const prevouts = keyedHash();
-  for (const inp of tx.inputs) {
-    prevouts.update(hexToBytes(inp.transaction_id));
-    prevouts.update(u32(inp.index));
+  if (anyoneCanPay) {
+    h.update(ZERO_HASH);
+  } else {
+    const prevouts = keyedHash();
+    for (const inp of tx.inputs) {
+      prevouts.update(hexToBytes(inp.transaction_id));
+      prevouts.update(u32(inp.index));
+    }
+    h.update(prevouts.digest());
   }
-  h.update(prevouts.digest());
 
-  const sequences = keyedHash();
-  for (const inp of tx.inputs) sequences.update(u64(inp.sequence));
-  h.update(sequences.digest());
+  if (anyoneCanPay || base === SIGHASH_NONE || base === SIGHASH_SINGLE) {
+    h.update(ZERO_HASH);
+  } else {
+    const sequences = keyedHash();
+    for (const inp of tx.inputs) sequences.update(u64(inp.sequence));
+    h.update(sequences.digest());
+  }
 
-  const sigOpCounts = keyedHash();
-  for (const inp of tx.inputs) sigOpCounts.update(new Uint8Array([inp.sig_op_count]));
-  h.update(sigOpCounts.digest());
+  if (anyoneCanPay) {
+    h.update(ZERO_HASH);
+  } else {
+    const sigOpCounts = keyedHash();
+    for (const inp of tx.inputs) sigOpCounts.update(new Uint8Array([inp.sig_op_count]));
+    h.update(sigOpCounts.digest());
+  }
 
   h.update(hexToBytes(input.transaction_id));
   h.update(u32(input.index));
@@ -82,13 +116,26 @@ export function transactionSigningHash(tx, idx) {
   h.update(u64(input.sequence));
   h.update(new Uint8Array([input.sig_op_count]));
 
-  const outputs = keyedHash();
-  for (const out of tx.outputs) {
-    outputs.update(u64(safeAmount(out.amount, 'output amount')));
-    outputs.update(u16(out.script_version));
-    outputs.update(lengthPrefixed(hexToBytes(out.script_public_key)));
+  const hashOutput = (sink, out) => {
+    sink.update(u64(safeAmount(out.amount, 'output amount')));
+    sink.update(u16(out.script_version));
+    sink.update(lengthPrefixed(hexToBytes(out.script_public_key)));
+  };
+  if (base === SIGHASH_NONE) {
+    h.update(ZERO_HASH);
+  } else if (base === SIGHASH_SINGLE) {
+    if (idx >= tx.outputs.length) {
+      h.update(ZERO_HASH);
+    } else {
+      const single = keyedHash();
+      hashOutput(single, tx.outputs[idx]);
+      h.update(single.digest());
+    }
+  } else {
+    const outputs = keyedHash();
+    for (const out of tx.outputs) hashOutput(outputs, out);
+    h.update(outputs.digest());
   }
-  h.update(outputs.digest());
 
   h.update(u64(tx.lock_time));
   h.update(hexToBytes(tx.subnetwork_id));
@@ -100,7 +147,7 @@ export function transactionSigningHash(tx, idx) {
     p.update(lengthPrefixed(tx.payload));
     h.update(p.digest());
   }
-  h.update(new Uint8Array([1])); // SIGHASH_ALL
+  h.update(new Uint8Array([hashType]));
   return h.digest();
 }
 
@@ -345,4 +392,191 @@ export function buildInferenceTx({
     totalOut: change + escrowAmount,
     fee: feeSompi + extraFee,
   };
+}
+
+// --- generalized signing (provider `signTx`: HTLC claim/refund, P2SH) ----------
+
+const isHex = (s) => typeof s === 'string' && s.length % 2 === 0 && /^[0-9a-f]*$/.test(s);
+
+function concatBytes(parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
+  }
+  return out;
+}
+
+/** Minimal data push: direct (≤75), OP_PUSHDATA1 (≤255) or OP_PUSHDATA2. */
+function pushData(bytes) {
+  if (bytes.length === 0) throw new Error('Refusing to push empty data');
+  if (bytes.length <= 75) return concatBytes([new Uint8Array([bytes.length]), bytes]);
+  if (bytes.length <= 255) return concatBytes([new Uint8Array([0x4c, bytes.length]), bytes]);
+  if (bytes.length <= 65535) {
+    return concatBytes([new Uint8Array([0x4d, bytes.length & 255, bytes.length >> 8]), bytes]);
+  }
+  throw new Error('Push data too large');
+}
+
+/**
+ * Sign a dApp-supplied transaction (wire-JSON shape plus per-input directives).
+ * This is the low-level path behind the provider's `signTx` — it makes HTLC
+ * claim/refund and other custom-script spends possible.
+ *
+ * Input directives (per input):
+ *   utxo               { amount_sompi, script_public_key, script_version? } —
+ *                      required to sign this input (the on-chain script_public_key
+ *                      of the outpoint, e.g. the P2SH script itself)
+ *   sighash_type       default SIGHASH_ALL; any valid Kaspa combination
+ *   redeem_script      hex — appended as the FINAL push of signature_script
+ *                      (P2SH / script-path spend)
+ *   sig_script_prefix  hex — raw bytes placed BEFORE the signature push
+ *   sig_script_suffix  hex — raw bytes between the signature push and the
+ *                      redeem-script push (e.g. `<preimage push> OP_TRUE` for
+ *                      an HTLC claim branch)
+ *   signature_script   hex — verbatim; the input is passed through untouched
+ *                      (already signed elsewhere)
+ *
+ * Assembly for a signed input:
+ *   prefix || 0x41 <sig(64) || hashType> || suffix || push(redeem_script)
+ *
+ * @returns {{ tx: object, unsigned: object, totalIn: number|null, totalOut: number, fee: number|null }}
+ */
+export function signTxJson(txJson, privateKeyHex) {
+  if (!txJson || !Array.isArray(txJson.inputs) || txJson.inputs.length === 0) {
+    throw new Error('Transaction has no inputs');
+  }
+  if (!Array.isArray(txJson.outputs) || txJson.outputs.length === 0) {
+    throw new Error('Transaction has no outputs');
+  }
+  const subnetworkId = (txJson.subnetwork_id ?? NATIVE_SUBNETWORK_ID).toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(subnetworkId)) throw new Error('Invalid subnetwork_id');
+  const payloadHex = (txJson.payload ?? '').toLowerCase();
+  if (!isHex(payloadHex)) throw new Error('Invalid payload hex');
+  const lockTime = safeAmount(Number(txJson.lock_time ?? 0), 'lock_time');
+  const gas = safeAmount(Number(txJson.gas ?? 0), 'gas');
+  const version = txJson.version ?? 0;
+
+  const outputs = txJson.outputs.map((o, i) => {
+    safeAmount(o.amount, `output ${i} amount`);
+    const spk = (o.script_public_key ?? '').toLowerCase();
+    if (!isHex(spk) || spk.length === 0) throw new Error(`Output ${i}: missing/invalid script_public_key`);
+    return { amount: o.amount, script_version: o.script_version ?? 0, script_public_key: spk };
+  });
+
+  const unsigned = {
+    version,
+    inputs: txJson.inputs.map((inp, i) => {
+      const txid = (inp.transaction_id ?? '').toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(txid)) throw new Error(`Input ${i}: invalid transaction_id`);
+      if (!Number.isInteger(inp.index) || inp.index < 0) throw new Error(`Input ${i}: invalid index`);
+      const sequence = inp.sequence === undefined ? MAX_SEQUENCE : BigInt(inp.sequence);
+      if (sequence < 0n || sequence > MAX_SEQUENCE) throw new Error(`Input ${i}: invalid sequence`);
+      let utxo;
+      if (inp.utxo) {
+        const spk = (inp.utxo.script_public_key ?? '').toLowerCase();
+        if (!isHex(spk) || spk.length === 0) throw new Error(`Input ${i}: invalid utxo script_public_key`);
+        utxo = {
+          amount_sompi: safeAmount(inp.utxo.amount_sompi, `input ${i} UTXO amount`),
+          script_version: inp.utxo.script_version ?? 0,
+          script_public_key: spk,
+        };
+      }
+      return {
+        transaction_id: txid,
+        index: inp.index,
+        sequence,
+        sig_op_count: inp.sig_op_count ?? 1,
+        utxo,
+      };
+    }),
+    outputs,
+    lock_time: BigInt(lockTime),
+    subnetwork_id: subnetworkId,
+    gas: BigInt(gas),
+    payload: payloadHex ? hexToBytes(payloadHex) : new Uint8Array(0),
+  };
+
+  const privKey = hexToBytes(privateKeyHex);
+  let signedCount = 0;
+  const wireInputs = unsigned.inputs.map((inp, i) => {
+    const src = txJson.inputs[i];
+    let scriptHex;
+    if (typeof src.signature_script === 'string' && src.signature_script.length > 0) {
+      scriptHex = src.signature_script.toLowerCase();
+      if (!isHex(scriptHex)) throw new Error(`Input ${i}: invalid verbatim signature_script`);
+    } else {
+      if (!inp.utxo) {
+        throw new Error(`Input ${i}: cannot sign without a utxo entry (amount_sompi + script_public_key)`);
+      }
+      for (const [k, v] of Object.entries({
+        sig_script_prefix: src.sig_script_prefix,
+        sig_script_suffix: src.sig_script_suffix,
+        redeem_script: src.redeem_script,
+      })) {
+        if (v !== undefined && (!isHex(String(v).toLowerCase()) || v.length === 0)) {
+          throw new Error(`Input ${i}: invalid ${k} hex`);
+        }
+      }
+      const hashType = src.sighash_type ?? SIGHASH_ALL;
+      const sig = schnorr.sign(transactionSigningHash(unsigned, i, hashType), privKey);
+      const sigPush = new Uint8Array(66);
+      sigPush[0] = 0x41; // push 65 bytes: sig || sighash-type
+      sigPush.set(sig, 1);
+      sigPush[65] = hashType;
+      const parts = [];
+      if (src.sig_script_prefix) parts.push(hexToBytes(src.sig_script_prefix.toLowerCase()));
+      parts.push(sigPush);
+      if (src.sig_script_suffix) parts.push(hexToBytes(src.sig_script_suffix.toLowerCase()));
+      if (src.redeem_script) parts.push(pushData(hexToBytes(src.redeem_script.toLowerCase())));
+      scriptHex = bytesToHex(concatBytes(parts));
+      signedCount++;
+    }
+    return {
+      transaction_id: inp.transaction_id,
+      index: inp.index,
+      signature_script: scriptHex,
+      sequence: inp.sequence.toString(),
+      sig_op_count: inp.sig_op_count,
+    };
+  });
+  if (signedCount === 0) {
+    throw new Error('Nothing to sign: every input already carries a signature_script');
+  }
+
+  const totalOut = outputs.reduce((n, o) => n + o.amount, 0);
+  const totalIn = unsigned.inputs.every((inp) => inp.utxo)
+    ? unsigned.inputs.reduce((n, inp) => n + inp.utxo.amount_sompi, 0)
+    : null;
+
+  return {
+    tx: {
+      version,
+      inputs: wireInputs,
+      outputs,
+      lock_time: lockTime,
+      subnetwork_id: subnetworkId,
+      gas,
+      payload: payloadHex,
+    },
+    unsigned,
+    totalIn,
+    totalOut,
+    fee: totalIn === null ? null : totalIn - totalOut,
+  };
+}
+
+// --- personal message signing (provider `signMessage`) -------------------------
+
+/** Kaspa-style personal message digest: keyed blake2b-256 ("PersonalMessageSigningHash"). */
+export function personalMessageHash(message) {
+  const h = blake2b.create({ key: MESSAGE_KEY, dkLen: 32 });
+  h.update(new TextEncoder().encode(message));
+  return h.digest();
+}
+
+/** @returns {string} 64-byte BIP340 Schnorr signature, hex. */
+export function signPersonalMessage(message, privateKeyHex) {
+  return bytesToHex(schnorr.sign(personalMessageHash(message), hexToBytes(privateKeyHex)));
 }

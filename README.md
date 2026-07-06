@@ -16,6 +16,7 @@ Private keys are derived and stored **only on your device** — the extension ta
 - **Address book & recents** — save `name → address` entries (managed from Settings or the Send screen); the destination field offers a picker with saved and recently-used addresses, filtered as you type.
 - **AI inference** — submit prompts to the Keryx Inference Oracle from a dedicated page: model picker with live miner counts, max-tokens slider, cost estimate (base + token surcharge + priority fee), escrowed AiRequest transaction signed locally, and a live feed with statuses (pending/responded/challenged/slashed) and IPFS-fetched results.
 - **Lock / auto-lock** — decrypted secrets live only in `chrome.storage.session` (in-memory); a background alarm enforces a 15-minute inactivity auto-lock. "Lock" keeps the encrypted vault; "Reset" (in Settings) removes it.
+- **dApp provider (`window.keryx`)** — a MetaMask/KasWare-style provider injected into web pages (see [docs/PROVIDER.md](docs/PROVIDER.md)): per-origin connect grants, `sendKrx`, `signMessage`, `submitInference`, and a low-level `signTx` that supports P2SH/custom-script spending — redeem script, script-sig prefix/suffix and the full set of Kaspa sighash types — enough for HTLC claim & refund flows. Every signature goes through an approval window that shows the origin, amounts, decoded outputs and custom-script warnings; connected sites are managed from Settings.
 
 Still planned: UTXO consolidation (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — the flow is already specified there).
 
@@ -31,14 +32,21 @@ Still planned: UTXO consolidation (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — 
 src/
   lib/keryx.js      Wallet primitives: BIP39/BIP32 derivation (m/44'/111111'/0'/0/i),
                     cashaddr-style keryx: address codec, KRX/sompi formatting
+  lib/tx.js         Tx building/signing: Kaspa sighash (all types), transfers,
+                    inference, generalized signTxJson (HTLC/P2SH), message signing
   lib/api.js        Keryx node REST client (https://keryx-labs.com/api/v1)
   lib/vault.js      Mnemonic vault: PBKDF2-SHA256 (600k) -> AES-256-GCM in chrome.storage.local
   lib/session.js    Unlocked session in chrome.storage.session + activity timestamps
+  lib/provider.js   Per-origin dApp grants + pending approval requests
   popup/            Popup UI (vanilla JS, theme extracted from keryx-labs.com)
-  background.js     MV3 service worker: auto-lock alarm
+  approval/         Approval window for dApp requests (connect/send/sign/inference)
+  inpage.js         window.keryx provider injected into pages (MAIN world)
+  content.js        page <-> background relay (ISOLATED world)
+  background.js     MV3 service worker: auto-lock alarm + provider request router
 build.mjs           esbuild bundling -> extension/
 manifest.json       MV3 manifest
 docs/PROTOCOL.md    Reverse-engineered Keryx protocol notes (addresses, sighash, tx format)
+docs/PROVIDER.md    window.keryx dApp API reference (incl. HTLC claim/refund examples)
 ```
 
 ## Security model
@@ -61,7 +69,8 @@ git tag v0.1.0 && git push origin v0.1.0
 
 The address codec was validated against the live network: mainnet richlist addresses decode, checksum-verify, and re-encode byte-identically, and freshly derived addresses are accepted by the public node API.
 
-Two test suites run via `npm test` (both gate CI):
+Three test suites run via `npm test` (all gate CI):
 
-- `scripts/tx-unit.mjs` — signer unit tests: coin selection, coinbase maturity, change math, wire format, and BIP340 signature verification against the recomputed sighash.
+- `scripts/tx-unit.mjs` — signer unit tests: coin selection, coinbase maturity, change math, wire format, BIP340 signature verification against the recomputed sighash, all Kaspa sighash-type rules, HTLC claim/refund signature-script assembly, and personal-message signing.
+- `scripts/provider-e2e.mjs` — fully offline drive of the dApp provider chain: the injected `window.keryx`, the content-script relay, the background router (approval-window lifecycle, per-origin grants, window-close rejection) and the approval page itself (unlock, connect, send, HTLC sign-tx, sign-message, reject).
 - `scripts/popup-e2e.mjs` — jsdom end-to-end drive of the real bundle: onboarding, vault, multi-account, address book, and a full send against a mocked node (broadcast body inspected); live-data checks auto-skip when the node is unreachable.

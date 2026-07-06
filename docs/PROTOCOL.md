@@ -103,6 +103,33 @@ update u8 0x01                                                        # SIGHASH_
 Sign the digest with **BIP340 Schnorr** (secp256k1) using the 32-byte private key;
 `signature_script = 0x41 || sig(64) || 0x01`.
 
+### Sighash types (Kaspa rules)
+
+`ALL = 0x01`, `NONE = 0x02`, `SINGLE = 0x04`, each optionally `| ANYONECANPAY (0x80)`.
+The reused-value hashes above change per type (only ALL is used by the official
+wallet and network-proven; the rest follow Kaspa consensus verbatim):
+
+- `hashPrevouts`, `hashSigOpCounts`: 32 zero bytes when ANYONECANPAY
+- `hashSequences`: 32 zero bytes when ANYONECANPAY or base is NONE/SINGLE
+- `hashOutputs`: 32 zero bytes for NONE; for SINGLE, the hash of only the
+  output at the input's index (32 zero bytes when there is none)
+- final byte = the full sighash-type byte, which also terminates the 65-byte
+  signature push in `signature_script`
+
+### Script-path spending (P2SH / HTLC)
+
+Kaspa-style P2SH `script_public_key` = `0xaa 0x20 <32-byte blake2b-256(redeem)> 0x87`
+(OP_BLAKE2B <hash> OP_EQUAL). The sighash commits to the on-chain
+`script_public_key` of the UTXO (NOT the redeem script — unlike Bitcoin); the
+redeem script is revealed as the final data push of `signature_script`:
+`<pushes consumed by redeem> <push(redeem_script)>`. CLTV branches additionally
+require `lock_time` set and the input `sequence` below u64-max.
+
+### Personal message signing
+
+`digest = keyed blake2b-256(key = "PersonalMessageSigningHash", msg-utf8)`,
+signed with BIP340 Schnorr (used by the provider's `signMessage`).
+
 ## Send flow (site behavior)
 
 1. Fetch UTXOs (limit 2000). Filter: `block_daa_score > 0` and not immature coinbase

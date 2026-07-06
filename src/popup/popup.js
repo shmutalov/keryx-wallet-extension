@@ -31,6 +31,7 @@ import {
 import { api, API_BASE } from '../lib/api.js';
 import { createVault, unlockVault, updateVault, vaultExists, clearVault } from '../lib/vault.js';
 import { startSession, getSession, updateSessionStore, touchSession, endSession } from '../lib/session.js';
+import { getConnections, removeConnection } from '../lib/provider.js';
 
 const app = document.getElementById('app');
 const ACTIVE_KEY = 'krx_active';
@@ -415,6 +416,39 @@ function renderSettings() {
     el('div', { class: 'settings-row' }, el('span', {}, k), el('span', {}, v));
   const version = (globalThis.chrome?.runtime?.getManifest?.() ?? {}).version ?? 'dev';
 
+  // dApp connections (origins granted through the provider's approval flow)
+  const sitesBox = el('div', { id: 'connected-sites', class: 'stack' },
+    el('span', { class: 'hint' }, 'Loading…'));
+  async function refreshSites() {
+    const connections = await getConnections();
+    const origins = Object.keys(connections).sort();
+    if (origins.length === 0) {
+      sitesBox.replaceChildren(el('span', { class: 'hint' }, 'No sites connected.'));
+      return;
+    }
+    sitesBox.replaceChildren(...origins.map((origin) => {
+      const c = connections[origin];
+      const acct = state.store.accounts.find((a) => a.id === c.accountId);
+      const remove = el('button', {
+        id: `site-disconnect-${origin.replace(/[^a-z0-9]/gi, '-')}`,
+        class: 'btn-small',
+        title: 'Disconnect site',
+      }, '✕');
+      remove.addEventListener('click', async () => {
+        await removeConnection(origin);
+        // background broadcasts accountsChanged([]) + disconnect to the site's tabs
+        try {
+          await chrome.runtime.sendMessage({ type: 'krx-origin-disconnected', origin });
+        } catch {}
+        refreshSites();
+      });
+      return el('div', { class: 'settings-row', style: 'align-items:center' },
+        el('span', { style: 'word-break:break-all' }, origin),
+        el('span', {}, acct ? `${acct.label} ` : '', remove));
+    }));
+  }
+  refreshSites();
+
   const confirmInput = el('input', { id: 'reset-confirm-input', type: 'text', placeholder: 'Type RESET to confirm', autocomplete: 'off' });
   const resetBtn = el('button', { id: 'reset-btn', class: 'btn danger', disabled: '' }, 'Reset wallet');
   confirmInput.addEventListener('input', () => {
@@ -447,6 +481,12 @@ function renderSettings() {
         class: 'btn ghost',
         onclick: () => renderAddressBook({ onBack: renderSettings }),
       }, '⌂ Manage address book')
+    ),
+    el('div', { class: 'card' },
+      el('span', { class: 'label' }, 'Connected sites'),
+      el('p', { class: 'hint', style: 'text-align:left;margin-bottom:8px' },
+        'Sites that can see your address and request transaction approvals via window.keryx.'),
+      sitesBox
     ),
     el('div', { class: 'card' },
       el('span', { class: 'label' }, 'Backup'),

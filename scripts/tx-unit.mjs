@@ -8,8 +8,15 @@ import {
   escrowScriptPublicKey,
   transactionSigningHash,
   spendableUtxos,
+  signTxJson,
+  signPersonalMessage,
+  personalMessageHash,
   MIN_FEE_SOMPI,
   INFERENCE_SUBNETWORK_ID,
+  SIGHASH_ALL,
+  SIGHASH_NONE,
+  SIGHASH_SINGLE,
+  SIGHASH_ANYONECANPAY,
 } from '../src/lib/tx.js';
 import { inferenceRewardSompi, getModel } from '../src/lib/models.js';
 
@@ -188,6 +195,165 @@ check('inference insufficient funds throws', throws(() => buildInferenceTx({
   payloadHex,
   escrow: { pubkeyHex: minerPub, amountSompi: reward },
 }), 'Insufficient funds'));
+
+// --- sighash types (Kaspa reused-values rules; `unsigned` has 2 inputs, 2 outputs) ---
+const eq = (a, b) => Buffer.compare(a, b) === 0;
+const mutate = (fn) => {
+  const c = structuredClone(unsigned);
+  fn(c);
+  return c;
+};
+
+check('ALL and ALL|ANYONECANPAY digests differ',
+  !eq(transactionSigningHash(unsigned, 0), transactionSigningHash(unsigned, 0, SIGHASH_ALL | SIGHASH_ANYONECANPAY)));
+
+const otherInputChanged = mutate((c) => { c.inputs[1].transaction_id = 'e'.repeat(64); });
+check('ANYONECANPAY: other input\'s outpoint does not affect the digest',
+  eq(transactionSigningHash(unsigned, 0, SIGHASH_ALL | SIGHASH_ANYONECANPAY),
+     transactionSigningHash(otherInputChanged, 0, SIGHASH_ALL | SIGHASH_ANYONECANPAY)) &&
+  !eq(transactionSigningHash(unsigned, 0), transactionSigningHash(otherInputChanged, 0)));
+
+const otherOutputChanged = mutate((c) => { c.outputs[1].amount += 1; });
+check('SINGLE: non-corresponding output does not affect the digest',
+  eq(transactionSigningHash(unsigned, 0, SIGHASH_SINGLE),
+     transactionSigningHash(otherOutputChanged, 0, SIGHASH_SINGLE)) &&
+  !eq(transactionSigningHash(unsigned, 0), transactionSigningHash(otherOutputChanged, 0)));
+
+const ownOutputChanged = mutate((c) => { c.outputs[0].amount += 1; });
+check('SINGLE: corresponding output DOES affect the digest',
+  !eq(transactionSigningHash(unsigned, 0, SIGHASH_SINGLE),
+      transactionSigningHash(ownOutputChanged, 0, SIGHASH_SINGLE)));
+
+check('NONE: outputs do not affect the digest',
+  eq(transactionSigningHash(unsigned, 0, SIGHASH_NONE),
+     transactionSigningHash(ownOutputChanged, 0, SIGHASH_NONE)));
+
+check('invalid sighash type throws', throws(() => transactionSigningHash(unsigned, 0, 0x03), 'Invalid sighash type'));
+
+// --- generalized signer: P2PK spend matches the standard signer's wire format ---
+const asJson = {
+  inputs: unsigned.inputs.map((i) => ({
+    transaction_id: i.transaction_id,
+    index: i.index,
+    utxo: { amount_sompi: i.utxo.amount_sompi, script_public_key: i.utxo.script_public_key },
+  })),
+  outputs: unsigned.outputs.map((o) => ({ amount: o.amount, script_public_key: o.script_public_key })),
+};
+const generic = signTxJson(asJson, sender.privateKeyHex);
+check('signTxJson P2PK: signature_script = 0x41 || sig || 0x01 and signatures verify',
+  generic.tx.inputs.every((inp, i) =>
+    inp.signature_script.length === 132 && inp.signature_script.startsWith('41') &&
+    inp.signature_script.endsWith('01') &&
+    schnorr.verify(hexToBytes(inp.signature_script).slice(1, 65),
+      transactionSigningHash(generic.unsigned, i), xOnlyPub)));
+check('signTxJson totals: totalIn/fee computed from utxo entries',
+  generic.totalIn === 7_00000000 && generic.fee === generic.totalIn - generic.totalOut);
+check('signTxJson defaults: max sequence, native subnetwork, lock_time 0',
+  generic.tx.inputs.every((i) => i.sequence === '18446744073709551615') &&
+  generic.tx.subnetwork_id === '0'.repeat(40) && generic.tx.lock_time === 0 && generic.tx.payload === '');
+
+// --- HTLC claim: P2SH-style spend with redeem script + preimage suffix ---
+const P2SH_SPK = 'aa20' + '33'.repeat(32) + '87'; // OP_BLAKE2B <hash> OP_EQUAL
+const REDEEM = 'ab'.repeat(113); // opaque 113-byte redeem script -> needs OP_PUSHDATA1
+const PREIMAGE = 'cd'.repeat(32);
+const CLAIM_SUFFIX = '20' + PREIMAGE + '51'; // <preimage push> OP_TRUE (claim branch)
+const htlcUtxoAmount = 5_00000000;
+const claim = signTxJson({
+  inputs: [{
+    transaction_id: 'f'.repeat(64),
+    index: 0,
+    utxo: { amount_sompi: htlcUtxoAmount, script_public_key: P2SH_SPK },
+    redeem_script: REDEEM,
+    sig_script_suffix: CLAIM_SUFFIX,
+  }],
+  outputs: [{ amount: htlcUtxoAmount - MIN_FEE_SOMPI, script_public_key: addressToScriptPublicKey(receiver.address) }],
+}, sender.privateKeyHex);
+const claimScript = claim.tx.inputs[0].signature_script;
+check('HTLC claim: <sig push> <suffix> <PUSHDATA1 redeem> assembly',
+  claimScript.startsWith('41') &&
+  claimScript.slice(130, 132) === '01' && // sighash byte after the 64-byte sig
+  claimScript.slice(132, 132 + CLAIM_SUFFIX.length) === CLAIM_SUFFIX &&
+  claimScript.slice(132 + CLAIM_SUFFIX.length) === '4c71' + REDEEM); // 0x71 = 113
+check('HTLC claim: signature verifies against the P2SH sighash',
+  schnorr.verify(hexToBytes(claimScript).slice(1, 65),
+    transactionSigningHash(claim.unsigned, 0), xOnlyPub));
+
+// --- HTLC refund: CLTV path (lock_time set, non-final sequence, redeem only) ---
+const refund = signTxJson({
+  lock_time: 123456,
+  inputs: [{
+    transaction_id: 'f'.repeat(64),
+    index: 0,
+    sequence: 0,
+    utxo: { amount_sompi: htlcUtxoAmount, script_public_key: P2SH_SPK },
+    redeem_script: REDEEM,
+  }],
+  outputs: [{ amount: htlcUtxoAmount - MIN_FEE_SOMPI, script_public_key: addressToScriptPublicKey(sender.address) }],
+}, sender.privateKeyHex);
+check('HTLC refund: lock_time + non-final sequence serialized, sig verifies',
+  refund.tx.lock_time === 123456 && refund.tx.inputs[0].sequence === '0' &&
+  refund.tx.inputs[0].signature_script.endsWith('4c71' + REDEEM) &&
+  schnorr.verify(hexToBytes(refund.tx.inputs[0].signature_script).slice(1, 65),
+    transactionSigningHash(refund.unsigned, 0), xOnlyPub));
+check('lock_time is part of the sighash',
+  !eq(transactionSigningHash(refund.unsigned, 0),
+      transactionSigningHash({ ...refund.unsigned, lock_time: 0n }, 0)));
+
+// --- custom sighash type flows into both the digest and the type byte ---
+const acp = signTxJson({
+  inputs: [{
+    transaction_id: 'f'.repeat(64),
+    index: 0,
+    utxo: { amount_sompi: htlcUtxoAmount, script_public_key: P2SH_SPK },
+    sighash_type: SIGHASH_ALL | SIGHASH_ANYONECANPAY,
+    redeem_script: REDEEM,
+  }],
+  outputs: [{ amount: htlcUtxoAmount - MIN_FEE_SOMPI, script_public_key: addressToScriptPublicKey(receiver.address) }],
+}, sender.privateKeyHex);
+const acpScript = acp.tx.inputs[0].signature_script;
+check('ALL|ANYONECANPAY: type byte 0x81 in the sig push, verifies against typed digest',
+  acpScript.slice(130, 132) === '81' &&
+  schnorr.verify(hexToBytes(acpScript).slice(1, 65),
+    transactionSigningHash(acp.unsigned, 0, SIGHASH_ALL | SIGHASH_ANYONECANPAY), xOnlyPub));
+
+// --- pass-through inputs (multi-party txs) ---
+const PRESIGNED = '41' + '99'.repeat(65);
+const mixed = signTxJson({
+  inputs: [
+    { transaction_id: 'a'.repeat(64), index: 0, signature_script: PRESIGNED },
+    { transaction_id: 'b'.repeat(64), index: 1,
+      utxo: { amount_sompi: 1_00000000, script_public_key: addressToScriptPublicKey(sender.address) } },
+  ],
+  outputs: [{ amount: 50000000, script_public_key: addressToScriptPublicKey(receiver.address) }],
+}, sender.privateKeyHex);
+check('verbatim signature_script passed through untouched; other input signed',
+  mixed.tx.inputs[0].signature_script === PRESIGNED &&
+  mixed.tx.inputs[1].signature_script.startsWith('41') &&
+  mixed.totalIn === null && mixed.fee === null);
+
+check('all-verbatim tx throws (nothing to sign)', throws(() => signTxJson({
+  inputs: [{ transaction_id: 'a'.repeat(64), index: 0, signature_script: PRESIGNED }],
+  outputs: [{ amount: 1000, script_public_key: addressToScriptPublicKey(receiver.address) }],
+}, sender.privateKeyHex), 'Nothing to sign'));
+
+check('signable input without utxo entry throws', throws(() => signTxJson({
+  inputs: [{ transaction_id: 'a'.repeat(64), index: 0 }],
+  outputs: [{ amount: 1000, script_public_key: addressToScriptPublicKey(receiver.address) }],
+}, sender.privateKeyHex), 'cannot sign without a utxo entry'));
+
+check('unsafe output amount refused', throws(() => signTxJson({
+  inputs: [{ transaction_id: 'a'.repeat(64), index: 0,
+    utxo: { amount_sompi: 1000, script_public_key: P2SH_SPK } }],
+  outputs: [{ amount: 2 ** 53, script_public_key: addressToScriptPublicKey(receiver.address) }],
+}, sender.privateKeyHex), 'outside JS safe-integer range'));
+
+// --- personal message signing ---
+const msgSig = signPersonalMessage('Login to dApp: nonce 42', sender.privateKeyHex);
+check('personal message signature verifies against keyed blake2b digest',
+  msgSig.length === 128 &&
+  schnorr.verify(hexToBytes(msgSig), personalMessageHash('Login to dApp: nonce 42'), xOnlyPub));
+check('different messages give different digests',
+  !eq(personalMessageHash('a'), personalMessageHash('b')));
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

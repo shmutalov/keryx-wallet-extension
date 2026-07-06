@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Keryx Wallet — Approval</title>
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    /* real window, not the 375px action popup */
+    body { width: auto; min-height: 0; }
+    .approval-pre {
+      font-size: 11px;
+      color: var(--mx-text);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 180px;
+      overflow-y: auto;
+      margin: 0;
+    }
+    details.raw-tx summary { cursor: pointer; font-size: 11px; color: var(--mx-dim); }
+    details.raw-tx pre { font-size: 10px; max-height: 160px; }
+    .warn-box {
+      font-size: 12px;
+      color: var(--mx-bright);
+      border: 1px solid var(--mx-mid);
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" aria-live="polite"></div>
+  <script src="approval.js"></script>
+</body>
+</html>
