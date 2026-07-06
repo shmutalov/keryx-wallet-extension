@@ -433,6 +433,13 @@ function renderSettings() {
         onclick: () => renderAddressBook({ onBack: renderSettings }),
       }, '⌂ Manage address book')
     ),
+    el('div', { class: 'card' },
+      el('span', { class: 'label' }, 'Backup'),
+      el('button', { id: 'settings-backup-btn', class: 'btn ghost', onclick: renderBackup },
+        '⧉ Backup seed phrase'),
+      el('p', { class: 'hint', style: 'text-align:left;margin-top:8px' },
+        'Reveals a seed phrase after re-entering your password.')
+    ),
     el('div', { class: 'card danger stack' },
       el('span', { class: 'label danger' }, 'Danger zone'),
       el('p', { class: 'hint', style: 'text-align:left' },
@@ -441,6 +448,88 @@ function renderSettings() {
       resetBtn
     )
   );
+}
+
+/**
+ * Seed-phrase backup. Even with the wallet unlocked, revealing a seed
+ * requires re-entering the session password (verified by decrypting the
+ * vault — the password itself is never stored anywhere).
+ */
+function renderBackup() {
+  const accounts = state.store.accounts;
+  const select = el('select', { id: 'backup-account-select', class: 'account-select' });
+  for (const a of accounts) {
+    const opt = el('option', { value: a.id }, `${a.label} (…${accountAddress(a).slice(-6)})`);
+    if (a.id === state.activeId) opt.setAttribute('selected', '');
+    select.append(opt);
+  }
+
+  const pwInput = el('input', { id: 'backup-pw', type: 'password', placeholder: '••••••••' });
+  const errorBox = el('div', { id: 'backup-error', class: 'error-box', style: 'display:none' });
+  const revealBtn = el('button', { id: 'backup-reveal-btn', class: 'btn', disabled: '' }, 'Reveal seed phrase →');
+  const output = el('div', { id: 'backup-output', class: 'stack' });
+  let busy = false;
+
+  pwInput.addEventListener('input', () => {
+    if (pwInput.value && !busy) revealBtn.removeAttribute('disabled');
+    else revealBtn.setAttribute('disabled', '');
+  });
+
+  async function doReveal() {
+    if (!pwInput.value || busy) return;
+    busy = true;
+    revealBtn.setAttribute('disabled', '');
+    revealBtn.textContent = 'Verifying…';
+    errorBox.style.display = 'none';
+    const res = await unlockVault(pwInput.value);
+    busy = false;
+    revealBtn.textContent = 'Reveal seed phrase →';
+    if (!res) {
+      errorBox.textContent = 'Wrong password.';
+      errorBox.style.display = '';
+      revealBtn.removeAttribute('disabled');
+      return;
+    }
+    const acct = accounts.find((a) => a.id === select.value) ?? activeAccount();
+    pwInput.value = '';
+    output.replaceChildren(
+      el('div', { class: 'card' },
+        el('span', { class: 'label' }, `${acct.label} — seed phrase`),
+        el('div', { id: 'backup-phrase', class: 'mnemonic-grid' },
+          acct.mnemonic.split(' ').map((w, i) => el('span', {}, el('i', {}, String(i + 1)), w))),
+        el('p', { class: 'hint', style: 'text-align:left;margin-top:8px' },
+          `Derivation: ${DERIVATION_BASE}/${acct.index}`),
+        el('div', { style: 'margin-top:8px;display:flex;gap:8px' },
+          copyButton(() => acct.mnemonic, '⧉ Copy phrase', '✓ copied'),
+          el('button', {
+            id: 'backup-hide-btn', class: 'btn-small', onclick: renderBackup,
+          }, 'Hide')))
+    );
+  }
+  revealBtn.addEventListener('click', doReveal);
+  pwInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doReveal();
+  });
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: renderSettings }, '← Back'),
+      el('h2', {}, 'Backup seed phrase')
+    ),
+    el('div', { class: 'card danger' },
+      el('span', { class: 'label danger' }, 'Read before revealing'),
+      el('p', { class: 'hint', style: 'text-align:left' },
+        'Your seed phrase is the master key to your funds — anyone who sees it can steal them. Make sure no one is watching your screen and never enter it on any website.')
+    ),
+    el('div', { class: 'card stack' },
+      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Account'), select),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Session password'), pwInput),
+      errorBox,
+      revealBtn
+    ),
+    output
+  );
+  setTimeout(() => pwInput.focus(), 50);
 }
 
 /** Address book management. Reachable from Settings and the Send screen. */

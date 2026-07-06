@@ -93,7 +93,10 @@ check(1, 'initial screen shows create button', !!byId('create-btn'));
 // --- create flow: backup step ---
 byId('create-btn').click();
 await sleep(100);
-check(2, 'mnemonic grid has 24 words', app().querySelectorAll('.mnemonic-grid span').length === 24);
+const createdPhrase = [...app().querySelectorAll('.mnemonic-grid span')]
+  .map((s) => s.textContent.replace(/^\d+/, ''))
+  .join(' ');
+check(2, 'mnemonic grid has 24 words', createdPhrase.split(' ').length === 24);
 const addr = app().querySelector('.addr')?.textContent ?? '';
 check(3, 'address preview', addr.startsWith('keryx:q'), addr.slice(0, 28) + '…');
 check(4, 'Next disabled before confirmation', byId('next-btn').disabled);
@@ -237,6 +240,32 @@ check(24, 'no Reset on dashboard, settings button instead', !byId('reset-btn') &
 byId('settings-btn').click();
 await sleep(50);
 check(25, 'settings page opens', app().textContent.includes('Danger zone') && !!byId('reset-btn'));
+
+// --- seed backup requires re-entering the password ---
+byId('settings-backup-btn').click();
+await sleep(100);
+check('25a', 'backup screen asks for password', !!byId('backup-pw') && !byId('backup-phrase'));
+byId('backup-pw').value = 'wrong-password';
+fire(byId('backup-pw'), 'input');
+byId('backup-reveal-btn').click();
+await until(() => byId('backup-error')?.style.display !== 'none', 30);
+check('25b', 'wrong password does not reveal seed',
+  byId('backup-error').textContent.includes('Wrong password') && !byId('backup-phrase'));
+byId('backup-pw').value = 'test-passphrase';
+fire(byId('backup-pw'), 'input');
+byId('backup-reveal-btn').click();
+await until(() => !!byId('backup-phrase'), 30);
+const revealedPhrase = [...byId('backup-phrase')?.querySelectorAll('span') ?? []]
+  .map((s) => s.textContent.replace(/^\d+/, ''))
+  .join(' ');
+check('25c', 'revealed seed matches the created mnemonic', revealedPhrase === createdPhrase);
+check('25d', 'derivation path shown for the account', app().textContent.includes("m/44'/111111'/0'/0/0"));
+byId('backup-hide-btn').click();
+await until(() => !byId('backup-phrase'), 10);
+check('25e', 'hide clears the revealed seed', !byId('backup-phrase') && !!byId('backup-pw'));
+app().querySelector('.link-btn').click(); // back to settings
+await until(() => !!byId('reset-btn'), 10);
+
 check(26, 'reset disabled without confirmation text', byId('reset-btn').disabled);
 byId('reset-confirm-input').value = 'RESET';
 fire(byId('reset-confirm-input'), 'input');

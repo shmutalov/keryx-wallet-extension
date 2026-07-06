@@ -9,6 +9,7 @@ Private keys are derived and stored **only on your device** — the extension ta
 - **Create a new wallet** — generates a 24-word BIP39 mnemonic with a backup-confirmation step, then a separate page to set the session password.
 - **Import a wallet** — accepts a 12- or 24-word BIP39 mnemonic.
 - **Multiple accounts** — switchable and renamable from the dashboard. "Add account" offers: next address from the current seed (`m/44'/111111'/0'/0/{n}`), a brand-new seed phrase, or an imported one. **One global session password secures the entire account store** — accounts added while unlocked need no extra password.
+- **Seed backup** — reveal any account's seed phrase from Settings; requires re-entering the session password (verified by decrypting the vault) even while unlocked.
 - **Settings page** — session info plus a danger zone: the destructive "Reset wallet" (removes all accounts + vault) lives there and only unlocks after typing `RESET`.
 - **Balance dashboard** — live KRX balance (auto-refresh every 15 s), approximate USD value, UTXO count with consolidation hint, network DAA score, and paginated transaction history linking to the explorer.
 - **Send KRX** — Kaspa-style transaction building and signing fully client-side: keyed blake2b-256 `TransactionSigningHash`, BIP340 Schnorr signatures, greedy largest-first UTXO selection with coinbase-maturity filtering, change back to self, broadcast via the public node.
