@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Keryx Wallet",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Client-side wallet for the Keryx Network (KRX). Create or import a wallet and track your balance — keys never leave your device.",
   "icons": {
     "16": "icons/icon16.png",
