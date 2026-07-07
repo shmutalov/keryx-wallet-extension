@@ -28,7 +28,7 @@ import {
   getRecentAddresses,
   pushRecentAddress,
 } from '../lib/book.js';
-import { api, API_BASE } from '../lib/api.js';
+import { api, API_BASE, DEFAULT_API_BASE, loadApiBase, setApiBase } from '../lib/api.js';
 import { createVault, unlockVault, updateVault, vaultExists, clearVault } from '../lib/vault.js';
 import { startSession, getSession, updateSessionStore, touchSession, endSession } from '../lib/session.js';
 import { getConnections, removeConnection } from '../lib/provider.js';
@@ -449,6 +449,27 @@ function renderSettings() {
   }
   refreshSites();
 
+  // configurable API host (empty = official default)
+  const hostInput = el('input', {
+    id: 'api-host-input', type: 'text', placeholder: `${DEFAULT_API_BASE} (default)`,
+    autocomplete: 'off', spellcheck: 'false',
+  });
+  hostInput.value = API_BASE === DEFAULT_API_BASE ? '' : API_BASE;
+  const hostStatus = el('div', { id: 'api-host-status', style: 'display:none' });
+  const hostSave = el('button', { id: 'api-host-save', class: 'btn ghost' }, 'Save API host');
+  hostSave.addEventListener('click', async () => {
+    try {
+      const base = await setApiBase(hostInput.value);
+      hostInput.value = base === DEFAULT_API_BASE ? '' : base;
+      hostStatus.className = 'success-box';
+      hostStatus.textContent = `Using ${base}${base === DEFAULT_API_BASE ? ' (default)' : ''}`;
+    } catch (e) {
+      hostStatus.className = 'error-box';
+      hostStatus.textContent = e instanceof Error ? e.message : String(e);
+    }
+    hostStatus.style.display = '';
+  });
+
   const confirmInput = el('input', { id: 'reset-confirm-input', type: 'text', placeholder: 'Type RESET to confirm', autocomplete: 'off' });
   const resetBtn = el('button', { id: 'reset-btn', class: 'btn danger', disabled: '' }, 'Reset wallet');
   confirmInput.addEventListener('input', () => {
@@ -487,6 +508,14 @@ function renderSettings() {
       el('p', { class: 'hint', style: 'text-align:left;margin-bottom:8px' },
         'Sites that can see your address and request transaction approvals via window.keryx.'),
       sitesBox
+    ),
+    el('div', { class: 'card stack' },
+      el('span', { class: 'label' }, 'Network'),
+      el('p', { class: 'hint', style: 'text-align:left' },
+        'API host used for balances, history and broadcasting. Leave empty for the official host. A custom host must allow CORS (a self-hosted Keryx indexer does).'),
+      hostInput,
+      hostStatus,
+      hostSave
     ),
     el('div', { class: 'card' },
       el('span', { class: 'label' }, 'Backup'),
@@ -1457,6 +1486,7 @@ for (const evt of ['mousedown', 'keydown']) {
 // --- init ----------------------------------------------------------------------
 
 (async function init() {
+  await loadApiBase(); // resolve the configured API host before anything renders
   if (!(await vaultExists())) {
     renderHome();
     return;

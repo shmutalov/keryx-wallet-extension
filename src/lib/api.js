@@ -1,8 +1,75 @@
 // Keryx node REST API client (same endpoints the official web wallet uses).
+//
+// The API host is configurable (Settings → Network): a custom base URL is
+// stored in chrome.storage.local under `krx_api_base` and falls back to the
+// official keryx-labs.com indexer. `API_BASE` is a live binding, loaded
+// lazily on first request and kept in sync across extension contexts
+// (popup / approval window / service worker) via storage.onChanged.
+// A custom host must allow CORS — the stock Keryx indexer serves
+// `access-control-allow-origin: *`, so a self-hosted instance just works.
 
-export const API_BASE = 'https://keryx-labs.com';
+export const DEFAULT_API_BASE = 'https://keryx-labs.com';
+const API_BASE_KEY = 'krx_api_base';
+
+export let API_BASE = DEFAULT_API_BASE;
+let baseLoaded = false;
+
+/**
+ * Validate and canonicalize an API base URL (no trailing slash; a path prefix
+ * like https://my-proxy/keryx is allowed). Empty input → null (use default).
+ */
+export function normalizeApiBase(value) {
+  const s = (value ?? '').trim();
+  if (!s) return null;
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    throw new Error('Invalid URL — expected e.g. https://my-node.example');
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+    throw new Error('Only http(s) API hosts are supported');
+  }
+  if (u.search || u.hash) throw new Error('API host must not contain a query string or fragment');
+  return u.href.replace(/\/+$/, '');
+}
+
+/** Load the configured host into the live `API_BASE` binding. */
+export async function loadApiBase() {
+  const { [API_BASE_KEY]: stored } = await chrome.storage.local.get(API_BASE_KEY);
+  try {
+    API_BASE = normalizeApiBase(stored) ?? DEFAULT_API_BASE;
+  } catch {
+    API_BASE = DEFAULT_API_BASE; // corrupted stored value — fall back safely
+  }
+  baseLoaded = true;
+  return API_BASE;
+}
+
+/** Persist a new API host; '' resets to the default. Returns the effective base. */
+export async function setApiBase(value) {
+  const norm = normalizeApiBase(value); // throws on invalid input
+  if (norm === null) await chrome.storage.local.remove(API_BASE_KEY);
+  else await chrome.storage.local.set({ [API_BASE_KEY]: norm });
+  API_BASE = norm ?? DEFAULT_API_BASE;
+  baseLoaded = true;
+  return API_BASE;
+}
+
+// Other contexts run their own copy of this module; storage.onChanged keeps
+// every copy current when the user saves a new host in Settings.
+globalThis.chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+  if (area !== 'local' || !(API_BASE_KEY in changes)) return;
+  try {
+    API_BASE = normalizeApiBase(changes[API_BASE_KEY].newValue) ?? DEFAULT_API_BASE;
+  } catch {
+    API_BASE = DEFAULT_API_BASE;
+  }
+  baseLoaded = true;
+});
 
 async function doFetch(path, init) {
+  if (!baseLoaded) await loadApiBase();
   try {
     // Timeout matters: a flapping node can accept the TCP connection and then
     // stall indefinitely, which would leave the UI in "checking…" forever.

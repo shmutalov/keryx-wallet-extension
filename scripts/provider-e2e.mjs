@@ -252,6 +252,49 @@ const bgSession = {};
     tabMessages.some((t) => t.msg.type === 'krx-event' && t.msg.event === 'disconnect' && t.msg.origin === DAPP));
 }
 
+// ================= 3b. configurable API host =================
+console.log('\n--- configurable API host ---');
+{
+  const runtimeListeners = [];
+  const local = {
+    krx_api_base: 'https://custom-node.example',
+    krx_connected: {
+      [DAPP]: { accountId: 'acc1', address: wallet.address, publicKeyHex: wallet.publicKeyHex.slice(2), connectedAt: 1 },
+    },
+  };
+  globalThis.chrome = {
+    runtime: {
+      id: 'test-ext',
+      onInstalled: { addListener: () => {} },
+      onStartup: { addListener: () => {} },
+      onMessage: { addListener: (l) => runtimeListeners.push(l) },
+      getURL: (p) => `chrome-extension://test-ext/${p}`,
+      getManifest: () => ({ version: 'test' }),
+    },
+    alarms: { create: () => {}, onAlarm: { addListener: () => {} } },
+    storage: { local: storageApi(local), session: storageApi({}) },
+    windows: { create: async () => ({ id: 1 }), remove: async () => {}, onRemoved: { addListener: () => {} } },
+    tabs: { query: async () => [], sendMessage: async () => {} },
+  };
+  const fetched = [];
+  globalThis.fetch = async (url) => {
+    fetched.push(String(url));
+    return new Response(JSON.stringify({ address: wallet.address, balance_sompi: 7 }), { status: 200 });
+  };
+  new Function(bundle('background.js'))();
+  const resp = await new Promise((resolve) => {
+    let async = false;
+    for (const l of runtimeListeners) {
+      if (l({ type: 'krx-request', id: 'x', method: 'krx_getBalance' },
+             { tab: { id: 7 }, origin: DAPP, url: `${DAPP}/` }, resolve) === true) async = true;
+    }
+    if (!async) resolve(undefined);
+  });
+  check('background fetches through the configured API host',
+    resp?.result?.balance_sompi === 7 && fetched[0]?.startsWith('https://custom-node.example/api/v1/'),
+    fetched[0] ?? '(no fetch)');
+}
+
 // ================= 4. approval page =================
 console.log('\n--- approval page ---');
 

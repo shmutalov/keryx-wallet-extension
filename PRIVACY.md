@@ -21,12 +21,12 @@ While the wallet is unlocked, decrypted keys are held only in memory-backed sess
 
 ## Network requests
 
-The extension communicates with exactly one host: `keryx-labs.com`, the public Keryx node API. The requests are:
+The extension communicates with exactly one API host: `keryx-labs.com` (the public Keryx node API) by default, or — only if you explicitly configure one under **Settings → Network** — a custom API host of your choosing, such as your own self-hosted Keryx node/indexer. The requests are:
 
 - Reading public blockchain data (balances, UTXOs, transaction history, network status, market price) for the addresses in your wallet.
 - Broadcasting transactions that you created and signed locally.
 
-Like any blockchain query service, the node operator can technically observe which addresses your installation looks up. No private keys, seed phrases, passwords, or personal information are ever transmitted.
+Like any blockchain query service, the operator of the API host you use can technically observe which addresses your installation looks up. No private keys, seed phrases, passwords, or personal information are ever transmitted.
 
 ## Website access (`window.keryx` provider)
 

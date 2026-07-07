@@ -10,7 +10,7 @@ Private keys are derived and stored **only on your device** — the extension ta
 - **Import a wallet** — accepts a 12- or 24-word BIP39 mnemonic.
 - **Multiple accounts** — switchable and renamable from the dashboard. "Add account" offers: next address from the current seed (`m/44'/111111'/0'/0/{n}`), a brand-new seed phrase, or an imported one. **One global session password secures the entire account store** — accounts added while unlocked need no extra password.
 - **Seed backup** — reveal any account's seed phrase from Settings; requires re-entering the session password (verified by decrypting the vault) even while unlocked.
-- **Settings page** — session info plus a danger zone: the destructive "Reset wallet" (removes all accounts + vault) lives there and only unlocks after typing `RESET`.
+- **Settings page** — session info, connected dApp sites, a configurable **API host** (point the wallet at your own Keryx node/indexer; empty = official host; the host must allow CORS, which the stock indexer does), plus a danger zone: the destructive "Reset wallet" (removes all accounts + vault) lives there and only unlocks after typing `RESET`.
 - **Balance dashboard** — live KRX balance (auto-refresh every 15 s), approximate USD value, UTXO count with consolidation hint, network DAA score, and a 3-row recent-transactions preview; a dedicated History screen paginates the full list (15 per page) with explorer links.
 - **Send KRX** — Kaspa-style transaction building and signing fully client-side: keyed blake2b-256 `TransactionSigningHash`, BIP340 Schnorr signatures, greedy largest-first UTXO selection with coinbase-maturity filtering, change back to self, broadcast via the public node.
 - **Address book & recents** — save `name → address` entries (managed from Settings or the Send screen); the destination field offers a picker with saved and recently-used addresses, filtered as you type.
@@ -53,7 +53,7 @@ docs/PROVIDER.md    window.keryx dApp API reference (incl. HTLC claim/refund exa
 
 - All seed phrases live in a single **account store**, encrypted as one blob with **PBKDF2-SHA256 (600,000 iterations) → AES-256-GCM** under the global session password, and stored in `chrome.storage.local`. (A v1 single-mnemonic vault is migrated automatically on unlock.)
 - While unlocked, the decrypted store and the derived AES key exist only in `chrome.storage.session` (memory-backed, cleared when the browser exits) and are wiped after 15 minutes of inactivity. The AES key is retained so adding an account re-encrypts the vault without re-prompting for the password.
-- No keys, mnemonics, or passwords are ever sent over the network; the only remote host is `https://keryx-labs.com` (read-only API in phase 1).
+- No keys, mnemonics, or passwords are ever sent over the network; the only remote host is `https://keryx-labs.com` (or the API host you configure in Settings).
 
 ## CI / Deploy
 

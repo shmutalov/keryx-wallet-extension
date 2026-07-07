@@ -366,6 +366,27 @@ check('25e', 'hide clears the revealed seed', !byId('backup-phrase') && !!byId('
 app().querySelector('.link-btn').click(); // back to settings
 await until(() => !!byId('reset-btn'), 10);
 
+// --- configurable API host ---
+check('25f', 'API host input empty while on default host',
+  !!byId('api-host-input') && byId('api-host-input').value === '');
+byId('api-host-input').value = 'https://custom.example/';
+byId('api-host-save').click();
+await until(() => byId('api-host-status')?.style.display !== 'none', 10);
+check('25g', 'custom host saved and normalized (no trailing slash)',
+  localStore.krx_api_base === 'https://custom.example' &&
+  byId('api-host-status').className === 'success-box' &&
+  byId('api-host-input').value === 'https://custom.example');
+byId('api-host-input').value = 'not a url';
+byId('api-host-save').click();
+await until(() => byId('api-host-status')?.className === 'error-box', 10);
+check('25h', 'invalid host rejected, stored value untouched',
+  byId('api-host-status').className === 'error-box' && localStore.krx_api_base === 'https://custom.example');
+byId('api-host-input').value = '';
+byId('api-host-save').click();
+await until(() => byId('api-host-status')?.className === 'success-box', 10);
+check('25i', 'empty input resets to the default host',
+  !('krx_api_base' in localStore) && byId('api-host-status').textContent.includes('(default)'));
+
 check(26, 'reset disabled without confirmation text', byId('reset-btn').disabled);
 byId('reset-confirm-input').value = 'RESET';
 fire(byId('reset-confirm-input'), 'input');
