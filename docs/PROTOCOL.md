@@ -132,7 +132,10 @@ redeem script is revealed as the final data push of `signature_script`:
 | `0xb1` | OP_CHECKSEQUENCEVERIFY (CSV) | **relative** | the spending input's `sequence` — compared under mask `0xffffffff`; bit 63 set on the stack value = check disabled, set on the input's sequence = fail |
 
 (Bitcoin uses 0xb1 for CLTV and 0xb2 for CSV — do not carry that mapping over.
-On Keryx `0xb2` is OpTxVersion, a reserved introspection opcode.)
+On Keryx `0xb2` is OpTxVersion, a reserved introspection opcode. Also unlike
+Bitcoin, both opcodes **pop** their stack operand — they are native opcodes,
+not soft-forked NOPs — so the Bitcoin `… CLTV OP_DROP` idiom must NOT be used;
+an OP_DROP there would consume the next item under the operand.)
 
 ### Personal message signing
 

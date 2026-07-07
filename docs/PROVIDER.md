@@ -98,13 +98,19 @@ to the page and **not** broadcast; submit it later with `broadcastTx(tx)`.
 ### HTLC example
 
 With a redeem script of the usual shape
-`OP_IF <hashlock branch: hash check + claimer key> OP_ELSE <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP <refunder key> OP_ENDIF … OP_CHECKSIG`:
+`OP_IF <hashlock branch: hash check + claimer key> OP_ELSE <locktime> OP_CHECKLOCKTIMEVERIFY <refunder key> OP_ENDIF … OP_CHECKSIG`:
 
-> ⚠ **Opcode bytes differ from Bitcoin.** On Keryx/Kaspa
-> `OP_CHECKLOCKTIMEVERIFY` (absolute, vs `lock_time`) is **`0xb0`** and
-> `OP_CHECKSEQUENCEVERIFY` (relative, vs the input's `sequence`) is **`0xb1`**.
-> Bitcoin's `0xb1`/`0xb2` mapping does not apply — a redeem script built with
-> Bitcoin bytes puts a CSV where you meant a CLTV.
+> ⚠ **Two Bitcoin habits break here.**
+> 1. **Opcode bytes differ**: on Keryx/Kaspa `OP_CHECKLOCKTIMEVERIFY`
+>    (absolute, vs `lock_time`) is **`0xb0`** and `OP_CHECKSEQUENCEVERIFY`
+>    (relative, vs the input's `sequence`) is **`0xb1`**. Bitcoin's
+>    `0xb1`/`0xb2` mapping does not apply — Bitcoin bytes put a CSV where you
+>    meant a CLTV.
+> 2. **No `OP_DROP` after CLTV/CSV**: unlike Bitcoin (where they are
+>    soft-forked NOPs that must leave the stack untouched), Keryx's CLTV/CSV
+>    **pop** their operand. The Bitcoin idiom `<locktime> CLTV OP_DROP` would
+>    drop the next stack item — the signature, in the shape above — and the
+>    script fails.
 
 ```js
 // claim (hashlock branch): reveal the preimage, select the IF branch
