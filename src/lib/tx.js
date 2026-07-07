@@ -281,8 +281,12 @@ export function buildInferencePayload(prompt, modelIdHex, maxTokens = 128, rewar
 }
 
 /**
- * Escrow script paying the executing miner, refundable to them only after the
- * lock: <lockBlocks LE minimal push> OP_CHECKLOCKTIMEVERIFY OP_DATA_32 <x-only pubkey> OP_CHECKSIG
+ * Escrow script paying the executing miner, spendable only via an input whose
+ * sequence encodes a relative lock >= lockBlocks:
+ *   <lockBlocks LE minimal push> OP_CHECKSEQUENCEVERIFY OP_DATA_32 <x-only pubkey> OP_CHECKSIG
+ * This is a RELATIVE (sequence) lock — keryx-node classifies exactly this
+ * pattern as ScriptClass::CsvPubKey ("OPoI escrow"). Note the opcode
+ * renumbering vs Bitcoin: on Keryx/Kaspa CSV = 0xb1 and CLTV = 0xb0.
  */
 export function escrowScriptPublicKey(pubkeyHex, lockBlocks = ESCROW_LOCK_BLOCKS) {
   const pubkey = hexToBytes(pubkeyHex);
@@ -296,7 +300,7 @@ export function escrowScriptPublicKey(pubkeyHex, lockBlocks = ESCROW_LOCK_BLOCKS
   let i = 0;
   out[i++] = lockBytes.length;
   for (const b of lockBytes) out[i++] = b;
-  out[i++] = 0xb1; // OP_CHECKLOCKTIMEVERIFY
+  out[i++] = 0xb1; // OP_CHECKSEQUENCEVERIFY (Keryx/Kaspa numbering; CLTV is 0xb0)
   out[i++] = 0x20; // OP_DATA_32
   out.set(pubkey, i);
   i += 32;

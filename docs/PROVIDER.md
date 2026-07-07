@@ -100,6 +100,12 @@ to the page and **not** broadcast; submit it later with `broadcastTx(tx)`.
 With a redeem script of the usual shape
 `OP_IF <hashlock branch: hash check + claimer key> OP_ELSE <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP <refunder key> OP_ENDIF … OP_CHECKSIG`:
 
+> ⚠ **Opcode bytes differ from Bitcoin.** On Keryx/Kaspa
+> `OP_CHECKLOCKTIMEVERIFY` (absolute, vs `lock_time`) is **`0xb0`** and
+> `OP_CHECKSEQUENCEVERIFY` (relative, vs the input's `sequence`) is **`0xb1`**.
+> Bitcoin's `0xb1`/`0xb2` mapping does not apply — a redeem script built with
+> Bitcoin bytes puts a CSV where you meant a CLTV.
+
 ```js
 // claim (hashlock branch): reveal the preimage, select the IF branch
 await window.keryx.signTx({

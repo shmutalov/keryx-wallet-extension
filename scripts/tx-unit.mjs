@@ -151,8 +151,8 @@ check('payload: utf-8 prompt @52', new TextDecoder().decode(pl.slice(52)) === 'H
 // --- escrow script ---
 const minerPub = '22'.repeat(32);
 const escrowScript = escrowScriptPublicKey(minerPub);
-// 36000 = 0x8CA0 -> minimal LE push [a0, 8c], CLTV(0xb1), push32 pubkey, CHECKSIG(0xac)
-check('escrow script: <36000> CLTV <pubkey> CHECKSIG', escrowScript === `02a08cb120${minerPub}ac`);
+// 36000 = 0x8CA0 -> minimal LE push [a0, 8c], CSV(0xb1 — relative lock), push32 pubkey, CHECKSIG(0xac)
+check('escrow script: <36000> CSV <pubkey> CHECKSIG', escrowScript === `02a08cb120${minerPub}ac`);
 
 // --- inference tx: escrow + change, non-native subnetwork ---
 const inf = buildInferenceTx({

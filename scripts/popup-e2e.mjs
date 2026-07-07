@@ -295,7 +295,7 @@ await until(() => byId('inf-status')?.className === 'success-box', 30);
 check('15q', 'AiRequest submitted, tx id shown', byId('inf-status').textContent.includes('e2e0'));
 const promptHex = Buffer.from('What is Keryx?', 'utf8').toString('hex');
 const escrowOut = broadcastBody?.outputs?.find((o) => o.amount === 70000000);
-check('15r', 'broadcast: inference subnetwork, model-id payload with prompt, CLTV escrow to miner',
+check('15r', 'broadcast: inference subnetwork, model-id payload with prompt, CSV escrow to miner',
   broadcastBody?.subnetwork_id === '03' + '0'.repeat(38) &&
   broadcastBody?.payload?.startsWith(GEMMA_ID) &&
   broadcastBody?.payload?.endsWith(promptHex) &&

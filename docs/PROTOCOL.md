@@ -122,8 +122,17 @@ Kaspa-style P2SH `script_public_key` = `0xaa 0x20 <32-byte blake2b-256(redeem)> 
 (OP_BLAKE2B <hash> OP_EQUAL). The sighash commits to the on-chain
 `script_public_key` of the UTXO (NOT the redeem script — unlike Bitcoin); the
 redeem script is revealed as the final data push of `signature_script`:
-`<pushes consumed by redeem> <push(redeem_script)>`. CLTV branches additionally
-require `lock_time` set and the input `sequence` below u64-max.
+`<pushes consumed by redeem> <push(redeem_script)>`.
+
+### Timelock opcodes — renumbered vs Bitcoin (verified in keryx-node txscript)
+
+| byte | Keryx/Kaspa opcode | lock kind | verified against |
+|---|---|---|---|
+| `0xb0` | OP_CHECKLOCKTIMEVERIFY (CLTV) | **absolute** | `tx.lock_time` — DAA score when `< 500_000_000_000`, else unix-ms timestamp; stack and tx values must be the same kind; the spending input's `sequence` must be below u64-max |
+| `0xb1` | OP_CHECKSEQUENCEVERIFY (CSV) | **relative** | the spending input's `sequence` — compared under mask `0xffffffff`; bit 63 set on the stack value = check disabled, set on the input's sequence = fail |
+
+(Bitcoin uses 0xb1 for CLTV and 0xb2 for CSV — do not carry that mapping over.
+On Keryx `0xb2` is OpTxVersion, a reserved introspection opcode.)
 
 ### Personal message signing
 
@@ -155,7 +164,11 @@ skip batches whose value ≤ fee.
 **Cost model** (all sompi): `priority_fee = max(3e7, user input)` — this is the tx fee;
 `inference_reward = model_base + 5e6 × ceil(max_tokens/64)` — paid into an escrow
 output to `capabilities[model].miner_pubkeys[0]` with script
-`<36000 LE minimal push> 0xb1(CLTV) 0x20 <miner x-only pubkey> 0xac(CHECKSIG)`.
+`<36000 LE minimal push> 0xb1(OP_CHECKSEQUENCEVERIFY) 0x20 <miner x-only pubkey> 0xac(CHECKSIG)`.
+This is a **relative (sequence) lock**, not CLTV: the miner can spend it only with
+an input whose `sequence` encodes a relative lock ≥ 36000. keryx-node recognizes
+exactly this pattern as `ScriptClass::CsvPubKey` ("OPoI escrow"). See the
+timelock-opcode table below — Keryx/Kaspa renumbered these vs Bitcoin.
 If `/capabilities` is unreachable the site submits without the escrow output.
 UI blocks submission when `miner_count === 0` for the chosen model.
 
