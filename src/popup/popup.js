@@ -20,7 +20,7 @@ import {
   buildInferencePayload,
   MIN_FEE_SOMPI,
 } from '../lib/tx.js';
-import { INFERENCE_MODELS, getModel, inferenceRewardSompi } from '../lib/models.js';
+import { INFERENCE_MODELS, getModel, getModelByIdHex, inferenceRewardSompi } from '../lib/models.js';
 import {
   getAddressBook,
   addBookEntry,
@@ -512,7 +512,7 @@ function renderSettings() {
     el('div', { class: 'card stack' },
       el('span', { class: 'label' }, 'Network'),
       el('p', { class: 'hint', style: 'text-align:left' },
-        'API host used for balances, history and broadcasting. Leave empty for the official host. A custom host must allow CORS (a self-hosted Keryx indexer does).'),
+        'API host used for balances, history and broadcasting. Leave empty for the official host. Use https:// (http:// only for localhost). A custom host must allow CORS (a self-hosted Keryx indexer does).'),
       hostInput,
       hostStatus,
       hostSave
@@ -581,7 +581,13 @@ function renderInference() {
 
   function minerInfo() {
     if (!capabilities) return { count: null, pubkey: undefined }; // endpoint unreachable
-    const cap = capabilities.find((c) => c.model === modelSelect.value);
+    // Match on the model key, but fall back to the on-chain id: an API host
+    // whose model registry lags ours reports the raw model_id_hex instead of
+    // the key, which would otherwise read as "0 miners" for a valid model.
+    const selected = getModel(modelSelect.value);
+    const cap = capabilities.find(
+      (c) => c.model === modelSelect.value || (selected && c.model_id_hex === selected.idHex)
+    );
     return { count: cap?.miner_count ?? 0, pubkey: cap?.miner_pubkeys?.[0] };
   }
 
@@ -751,7 +757,9 @@ function renderInference() {
             : item.result
               ? el('span', { class: 'badge badge-ok' }, '✓ RESPONDED')
               : el('span', { class: 'badge badge-pend' }, '⏳ PENDING');
-        const modelName = getModel(item.model)?.name ?? item.model;
+        // item.model is normally the key; fall back to id-hex resolution when
+        // the API host returned an unrecognised (raw) model id.
+        const modelName = (getModel(item.model) ?? getModelByIdHex(item.model))?.name ?? item.model;
         return el('div', { class: 'inf-item' },
           el('div', { class: 'inf-item-head' },
             el('a', {

@@ -46,6 +46,16 @@ export function getModel(key) {
   return INFERENCE_MODELS.find((m) => m.key === key);
 }
 
+/**
+ * Resolve a model by its on-chain id (hex). Fallback for when the API host's
+ * own model registry is out of sync with ours and returns a raw model id
+ * instead of the key — see api.capabilities()/inferences().
+ */
+export function getModelByIdHex(idHex) {
+  const h = (idHex ?? '').toLowerCase();
+  return INFERENCE_MODELS.find((m) => m.idHex === h);
+}
+
 /** Escrow amount (the "inference reward"): model base price + token surcharge. */
 export function inferenceRewardSompi(modelKey, maxTokens) {
   const model = getModel(modelKey);

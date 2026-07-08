@@ -15,6 +15,21 @@ export let API_BASE = DEFAULT_API_BASE;
 let baseLoaded = false;
 
 /**
+ * Loopback hosts are "potentially trustworthy" secure contexts, so the browser
+ * allows plain-http requests to them from the extension; every other host is
+ * mixed-content-blocked over http. Covers localhost (+ subdomains), 127.0.0.0/8
+ * and ::1.
+ */
+function isLoopbackHost(hostname) {
+  const h = hostname.toLowerCase();
+  return (
+    h === 'localhost' || h.endsWith('.localhost') ||
+    h === '[::1]' || h === '::1' ||
+    /^127(?:\.\d{1,3}){3}$/.test(h)
+  );
+}
+
+/**
  * Validate and canonicalize an API base URL (no trailing slash; a path prefix
  * like https://my-proxy/keryx is allowed). Empty input → null (use default).
  */
@@ -29,6 +44,12 @@ export function normalizeApiBase(value) {
   }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') {
     throw new Error('Only http(s) API hosts are supported');
+  }
+  // A remote http host would silently fail: the extension is a secure context,
+  // so the browser blocks its plain-http requests as mixed content. Only
+  // loopback (a local shim) is exempt.
+  if (u.protocol === 'http:' && !isLoopbackHost(u.hostname)) {
+    throw new Error('http:// is only allowed for localhost — use https:// for a remote API host');
   }
   if (u.search || u.hash) throw new Error('API host must not contain a query string or fragment');
   return u.href.replace(/\/+$/, '');

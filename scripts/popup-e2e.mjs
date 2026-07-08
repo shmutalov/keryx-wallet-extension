@@ -381,9 +381,24 @@ byId('api-host-save').click();
 await until(() => byId('api-host-status')?.className === 'error-box', 10);
 check('25h', 'invalid host rejected, stored value untouched',
   byId('api-host-status').className === 'error-box' && localStore.krx_api_base === 'https://custom.example');
-byId('api-host-input').value = '';
+// remote http is mixed-content-blocked from the extension → rejected up front
+byId('api-host-input').value = 'http://remote.example:8787';
+byId('api-host-save').click();
+await until(() => byId('api-host-status')?.textContent?.includes('localhost'), 10);
+check('25h2', 'remote http host rejected, stored value untouched',
+  byId('api-host-status').className === 'error-box' &&
+  byId('api-host-status').textContent.includes('localhost') &&
+  localStore.krx_api_base === 'https://custom.example');
+// loopback http is a valid local-shim target
+byId('api-host-input').value = 'http://127.0.0.1:8787';
 byId('api-host-save').click();
 await until(() => byId('api-host-status')?.className === 'success-box', 10);
+check('25h3', 'loopback http host accepted',
+  localStore.krx_api_base === 'http://127.0.0.1:8787' &&
+  byId('api-host-input').value === 'http://127.0.0.1:8787');
+byId('api-host-input').value = '';
+byId('api-host-save').click();
+await until(() => byId('api-host-status')?.textContent?.includes('(default)'), 10);
 check('25i', 'empty input resets to the default host',
   !('krx_api_base' in localStore) && byId('api-host-status').textContent.includes('(default)'));
 
