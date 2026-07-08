@@ -181,6 +181,8 @@ const bgSession = {};
     if (u.endsWith('/balance')) return new Response(JSON.stringify({ address: wallet.address, balance_sompi: 123 }), { status: 200 });
     if (u.includes('/utxos?')) return new Response(JSON.stringify([]), { status: 200 });
     if (u.endsWith('/broadcast')) return new Response(JSON.stringify({ transaction_id: 'bcast-1' }), { status: 200 });
+    if (u.endsWith('/spend')) return new Response(JSON.stringify({ status: 'accepted', transaction: { tx_id: 'spender-1', inputs: [{ signature_script: 'preimagepush' }] } }), { status: 200 });
+    if (u.includes('/transactions/')) return new Response(JSON.stringify({ tx_id: 'tx-1', inputs: [], outputs: [], payload: 'deadbeef' }), { status: 200 });
     throw new Error(`unexpected fetch ${u}`);
   };
   new Function(bundle('background.js'))();
@@ -236,6 +238,16 @@ const bgSession = {};
     (await rpc('krx_requestAccounts')).result?.[0] === wallet.address && windowsCreated.length === winsBefore);
   check('getBalance proxies the node API', (await rpc('krx_getBalance')).result?.balance_sompi === 123);
   check('broadcastTx returns the transaction id', (await rpc('krx_broadcastTx', { tx: { inputs: [] } })).result === 'bcast-1');
+  check('getTransaction proxies the wire tx (swap recovery)',
+    (await rpc('krx_getTransaction', { txId: 'tx-1' })).result?.payload === 'deadbeef');
+  check('getTransaction without txId -> error',
+    /Missing txId/.test((await rpc('krx_getTransaction', {})).error ?? ''));
+  check('getOutpointSpend returns status + spending tx (preimage source)', await (async () => {
+    const r = (await rpc('krx_getOutpointSpend', { txId: 'tx-1', index: 0 })).result;
+    return r?.status === 'accepted' && r.transaction?.inputs?.[0]?.signature_script === 'preimagepush';
+  })());
+  check('getOutpointSpend with invalid index -> error',
+    /invalid txId or index/.test((await rpc('krx_getOutpointSpend', { txId: 'tx-1', index: -1 })).error ?? ''));
 
   // closing the approval window = rejection
   const other = { tab: { id: 9 }, origin: 'https://other.example', url: 'https://other.example/' };

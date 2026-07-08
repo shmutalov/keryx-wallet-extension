@@ -59,6 +59,27 @@
     getBalance: () => request('krx_getBalance'),
     /** Spendable UTXO entries of the connected account (for building custom transactions). */
     getUtxos: () => request('krx_getUtxos'),
+
+    /**
+     * Fetch a transaction by id in wire-JSON shape, incl. `payload` — for HTLC
+     * swap recovery (a funding tx's payload carries redeem-script hints).
+     * Requires the API host's indexer; rejects if outside its retention window.
+     * @param {string} txId
+     * @returns {Promise<object>} { tx_id, inputs, outputs, payload, block_hash, daa_score, … }
+     */
+    getTransaction: (txId) => request('krx_getTransaction', { txId }),
+
+    /**
+     * The transaction that spent an outpoint — an HTLC claim's preimage is a
+     * push in its `signature_script`, so this is the counterparty-preimage
+     * lookup for a swap claim/refund. `status` is 'mempool' (relayed, unmined)
+     * or 'accepted'. Requires the API host's indexer.
+     * @param {string} txId  the funded outpoint's transaction id
+     * @param {number} index the funded outpoint's output index
+     * @returns {Promise<{status: string, transaction: object}>}
+     */
+    getOutpointSpend: (txId, index) => request('krx_getOutpointSpend', { txId, index }),
+
     getNetwork: () => request('krx_getNetwork'),
     getVersion: () => request('krx_getVersion'),
 

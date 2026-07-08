@@ -51,6 +51,15 @@ function u64(v) {
   return b;
 }
 
+// Sompi amounts arrive from the API as JSON numbers, and res.json() rounds any
+// integer above Number.MAX_SAFE_INTEGER (2^53-1 sompi ≈ 90.07M KRX). We can't
+// tell a rounded value from an exact one, so rather than risk signing a
+// corrupted amount we refuse it here. This caps a single UTXO / one-tx input
+// sum at ~90.07M KRX — unreachable for a personal wallet (~0.3% of total
+// supply in one output). To lift it, parse amount fields from the raw response
+// body with a BigInt-aware reviver (the shim writes exact digits; only
+// JSON.parse loses them) and thread BigInt through coin selection and the u64()
+// boundary, which already accepts BigInt.
 function safeAmount(n, what) {
   if (!Number.isSafeInteger(n) || n < 0) {
     throw new Error(`${what} (${n}) outside JS safe-integer range — refusing to sign a possibly corrupted amount`);

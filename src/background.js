@@ -96,6 +96,21 @@ async function handleRequest(msg, sender) {
       if (!conn) return NOT_CONNECTED;
       return { result: await api.utxos(conn.address, 2000) };
     }
+    case 'krx_getTransaction': {
+      // Public chain data (swap recovery); connection-gated like the other reads.
+      if (!conn) return NOT_CONNECTED;
+      const txId = msg.params?.txId;
+      if (typeof txId !== 'string' || !txId) return { error: 'Missing txId' };
+      return { result: await api.transaction(txId) };
+    }
+    case 'krx_getOutpointSpend': {
+      if (!conn) return NOT_CONNECTED;
+      const { txId, index } = msg.params ?? {};
+      if (typeof txId !== 'string' || !txId || !Number.isInteger(index) || index < 0) {
+        return { error: 'Missing/invalid txId or index' };
+      }
+      return { result: await api.outpointSpend(txId, index) };
+    }
     case 'krx_broadcastTx': {
       if (!conn) return NOT_CONNECTED;
       if (!msg.params?.tx || typeof msg.params.tx !== 'object') return { error: 'Missing tx' };

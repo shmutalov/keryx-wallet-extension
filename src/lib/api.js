@@ -7,6 +7,11 @@
 // (popup / approval window / service worker) via storage.onChanged.
 // A custom host must allow CORS — the stock Keryx indexer serves
 // `access-control-allow-origin: *`, so a self-hosted instance just works.
+//
+// Sompi amounts (`balance_sompi`, `amount_sompi`, `total_received_sompi`) come
+// back as JSON numbers, so `res.json()` reads them losslessly only below 2^53
+// sompi (≈ 90.07M KRX); the signing path guards the rest — see `safeAmount` in
+// tx.js.
 
 export const DEFAULT_API_BASE = 'https://keryx-labs.com';
 const API_BASE_KEY = 'krx_api_base';
@@ -145,6 +150,14 @@ export const api = {
   // { address, total_received_sompi, total_tx_count, transactions: [{ tx_id, amount_sompi, is_spend, daa_score, block_hash }] }
   addressTxs: (address, limit = 10, offset = 0) =>
     get(`/api/v1/addresses/${encodeURIComponent(address)}?limit=${limit}&offset=${offset}`),
+  // Full wire tx incl. `payload` — HTLC swap recovery reads redeem-script hints
+  // from a funding tx's payload. Needs the host's indexer; 404 outside its window.
+  // { tx_id, version, inputs, outputs, lock_time, subnetwork_id, gas, payload, block_hash, daa_score, is_coinbase }
+  transaction: (txId) => get(`/api/v1/transactions/${encodeURIComponent(txId)}`),
+  // The tx that spent an outpoint — an HTLC claim's preimage is a push in its
+  // signature_script. { status: 'mempool'|'accepted', transaction: <wire tx> }. Needs the indexer.
+  outpointSpend: (txId, index) =>
+    get(`/api/v1/outpoints/${encodeURIComponent(txId)}/${encodeURIComponent(index)}/spend`),
   // broadcast signed transaction
   broadcast: (tx) => post('/api/v1/broadcast', tx),
   market: () => get('/api/v1/market'),
