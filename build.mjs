@@ -27,5 +27,6 @@ cpSync('src/popup/popup.css', 'extension/popup.css');
 cpSync('src/approval/approval.html', 'extension/approval.html');
 cpSync('manifest.json', 'extension/manifest.json');
 cpSync('icons', 'extension/icons', { recursive: true });
+cpSync('_locales', 'extension/_locales', { recursive: true });
 
 console.log('Built -> extension/');

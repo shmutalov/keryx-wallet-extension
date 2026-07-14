@@ -29,9 +29,20 @@ import { api } from '../lib/api.js';
 import { unlockVault } from '../lib/vault.js';
 import { getSession, startSession, touchSession } from '../lib/session.js';
 import { getPendingRequest, getConnection, setConnection } from '../lib/provider.js';
+import { t, loadLocale } from '../lib/i18n.js';
 
 const app = document.getElementById('app');
 const reqId = new URLSearchParams(location.search).get('id');
+
+// Localized action label for a request type (shown in the header / unlock screen).
+const ACTION_KEY = {
+  connect: 'btn_connect',
+  send: 'approval_send_action',
+  'sign-message': 'approval_signmsg_action',
+  'sign-tx': 'approval_signtx_action',
+  inference: 'approval_inference_action',
+};
+const actionLabel = (type) => t(ACTION_KEY[type] ?? 'approval_action');
 
 let req = null;
 let session = null; // { store, rawKeyHex }
@@ -67,9 +78,9 @@ async function sendResult(result, error) {
 
 function header(action) {
   return el('div', { class: 'card' },
-    el('span', { class: 'label' }, 'Request from'),
+    el('span', { class: 'label' }, t('approval_request_from')),
     el('div', { id: 'approval-origin', class: 'addr', style: 'font-size:13px' }, req.origin),
-    row('Action', el('span', { id: 'approval-action' }, action))
+    row(t('approval_action'), el('span', { id: 'approval-action' }, action))
   );
 }
 
@@ -87,9 +98,9 @@ function setStatus(box, kind, text) {
  * Approve/Reject row. `onApprove` runs with both buttons disabled and may
  * report progress via the returned setBusyText; a throw re-enables the UI.
  */
-function actions(onApprove, approveLabel = 'Approve') {
+function actions(onApprove, approveLabel = t('btn_approve')) {
   const approve = el('button', { id: 'approve-btn', class: 'btn' }, approveLabel);
-  const reject = el('button', { id: 'reject-btn', class: 'btn ghost' }, 'Reject');
+  const reject = el('button', { id: 'reject-btn', class: 'btn ghost' }, t('btn_reject'));
   reject.addEventListener('click', () => sendResult(undefined, 'User rejected the request'));
   approve.addEventListener('click', async () => {
     approve.setAttribute('disabled', '');
@@ -109,7 +120,7 @@ function actions(onApprove, approveLabel = 'Approve') {
 
 /** Invalid/unserviceable request: show why, only exit is to dismiss with the error. */
 function renderInvalid(message) {
-  const close = el('button', { id: 'reject-btn', class: 'btn ghost' }, 'Close');
+  const close = el('button', { id: 'reject-btn', class: 'btn ghost' }, t('btn_close'));
   close.addEventListener('click', () => sendResult(undefined, `Invalid request: ${message}`));
   show(
     header(req?.type ?? 'unknown'),
@@ -130,21 +141,21 @@ async function signingContext() {
 // --- screens ---------------------------------------------------------------------
 
 function renderUnlock() {
-  const pw = el('input', { id: 'unlock-password', type: 'password', placeholder: 'Session password', autocomplete: 'off' });
+  const pw = el('input', { id: 'unlock-password', type: 'password', placeholder: t('approval_session_password_ph'), autocomplete: 'off' });
   const err = el('div', { class: 'error-box', style: 'display:none' });
-  const btn = el('button', { id: 'unlock-btn', class: 'btn' }, 'Unlock');
-  const reject = el('button', { id: 'reject-btn', class: 'btn ghost' }, 'Reject');
+  const btn = el('button', { id: 'unlock-btn', class: 'btn' }, t('btn_unlock'));
+  const reject = el('button', { id: 'reject-btn', class: 'btn ghost' }, t('btn_reject'));
   reject.addEventListener('click', () => sendResult(undefined, 'User rejected the request'));
 
   async function doUnlock() {
     btn.setAttribute('disabled', '');
-    btn.textContent = 'Unlocking…';
+    btn.textContent = t('status_unlocking');
     err.style.display = 'none';
     const res = await unlockVault(pw.value);
     if (!res) {
       btn.removeAttribute('disabled');
-      btn.textContent = 'Unlock';
-      err.textContent = 'Wrong password';
+      btn.textContent = t('btn_unlock');
+      err.textContent = t('err_wrong_password');
       err.style.display = '';
       return;
     }
@@ -158,11 +169,11 @@ function renderUnlock() {
   });
 
   show(
-    header(req.type),
+    header(actionLabel(req.type)),
     el('div', { class: 'card stack', style: 'margin-top:12px' },
-      el('span', { class: 'label' }, 'Wallet locked'),
+      el('span', { class: 'label' }, t('approval_wallet_locked')),
       el('p', { class: 'hint', style: 'text-align:left' },
-        'Enter your session password to review this request.'),
+        t('approval_unlock_hint')),
       pw,
       err
     ),
@@ -179,11 +190,11 @@ function renderConnect() {
   const status = statusBox();
 
   show(
-    header('Connect'),
+    header(t('btn_connect')),
     el('div', { class: 'card stack', style: 'margin-top:12px' },
-      el('span', { class: 'label' }, 'Share with this site'),
+      el('span', { class: 'label' }, t('approval_connect_share_label')),
       el('p', { class: 'hint', style: 'text-align:left' },
-        'The site will see the selected account’s address, public key, balance and UTXOs, and may ask you to approve transactions. It never gets your keys.'),
+        t('approval_connect_hint')),
       select
     ),
     status,
@@ -197,7 +208,7 @@ function renderConnect() {
         publicKeyHex: wallet.publicKeyHex.slice(2),
       });
       await sendResult([wallet.address]);
-    }, 'Connect')
+    }, t('btn_connect'))
   );
 }
 
@@ -213,22 +224,22 @@ function renderSend() {
   const status = statusBox();
 
   show(
-    header('Send KRX'),
+    header(t('approval_send_action')),
     el('div', { class: 'card stack', style: 'margin-top:12px' },
-      el('span', { class: 'label' }, 'Transfer'),
-      row('From', fromLine),
-      row('To', shortAddress(toAddress)),
-      row('Amount', `${formatKRX(sompi)} KRX`),
-      row('Fee', `${formatKRX(fee)} KRX`),
-      row('Total', `${formatKRX(sompi + fee)} KRX`)
+      el('span', { class: 'label' }, t('approval_transfer')),
+      row(t('label_from'), fromLine),
+      row(t('label_to'), shortAddress(toAddress)),
+      row(t('label_amount'), `${formatKRX(sompi)} KRX`),
+      row(t('label_fee'), `${formatKRX(fee)} KRX`),
+      row(t('label_total'), `${formatKRX(sompi + fee)} KRX`)
     ),
     status,
     actions(async (busy) => {
       try {
         const { wallet } = await signingContext();
-        busy('⏳ Loading UTXOs…');
+        busy(t('status_loading_utxos'));
         const [utxos, info] = await Promise.all([api.utxos(wallet.address, 400), api.info().catch(() => null)]);
-        busy('⚙ Signing…');
+        busy(t('status_signing'));
         const built = buildTransferTx({
           utxos,
           toAddress,
@@ -238,7 +249,7 @@ function renderSend() {
           privateKeyHex: wallet.privateKeyHex,
           currentDaaScore: info?.last_daa_score ?? 0,
         });
-        busy('📡 Broadcasting…');
+        busy(t('status_broadcasting'));
         const res = await api.broadcast(built.tx);
         await sendResult(res.transaction_id);
       } catch (e) {
@@ -260,12 +271,12 @@ function renderSignMessage() {
   const status = statusBox();
 
   show(
-    header('Sign message'),
+    header(t('approval_signmsg_action')),
     el('div', { class: 'card stack', style: 'margin-top:12px' },
-      el('span', { class: 'label' }, 'Message'),
+      el('span', { class: 'label' }, t('approval_message')),
       el('pre', { id: 'sign-message-text', class: 'approval-pre' }, message),
       el('p', { class: 'hint', style: 'text-align:left' },
-        'Signing proves this message came from your account. It cannot move funds.')
+        t('approval_signmsg_hint'))
     ),
     status,
     actions(async () => {
@@ -276,15 +287,15 @@ function renderSignMessage() {
         setStatus(status, 'error', e instanceof Error ? e.message : String(e));
         throw e;
       }
-    }, 'Sign')
+    }, t('btn_sign'))
   );
 }
 
 function decodeOutputScript(spk) {
   const p2pk = /^20([0-9a-f]{64})ac$/.exec(spk ?? '');
   if (p2pk) return shortAddress(encodeAddress(0, hexToBytes(p2pk[1])));
-  if (/^aa20[0-9a-f]{64}87$/.test(spk ?? '')) return 'P2SH (script hash)';
-  return 'custom script';
+  if (/^aa20[0-9a-f]{64}87$/.test(spk ?? '')) return t('script_p2sh');
+  return t('script_custom');
 }
 
 function renderSignTx() {
@@ -304,40 +315,40 @@ function renderSignTx() {
   const hasCustomScript = tx.inputs.some((i) => i.redeem_script || i.sig_script_prefix || i.sig_script_suffix);
 
   const outputRows = tx.outputs.map((o, i) =>
-    row(`Output ${i} → ${decodeOutputScript(o.script_public_key)}`, `${formatKRX(o.amount)} KRX`));
+    row(t('approval_output_arrow', i, decodeOutputScript(o.script_public_key)), `${formatKRX(o.amount)} KRX`));
 
   const status = statusBox();
   show(
-    header('Sign transaction'),
+    header(t('approval_signtx_action')),
     el('div', { class: 'card stack', style: 'margin-top:12px' },
-      el('span', { class: 'label' }, 'Summary'),
-      row('Inputs', `${tx.inputs.length}${totalIn !== null ? ` — ${formatKRX(totalIn)} KRX` : ''}`),
+      el('span', { class: 'label' }, t('approval_summary')),
+      row(t('label_inputs'), `${tx.inputs.length}${totalIn !== null ? ` — ${formatKRX(totalIn)} KRX` : ''}`),
       outputRows,
-      row('Fee', totalIn !== null ? `${formatKRX(totalIn - totalOut)} KRX` : 'unknown (partial UTXO data)'),
-      Number(tx.lock_time ?? 0) > 0 ? row('Lock time (DAA)', String(tx.lock_time)) : null,
-      sighashTypes.some((t) => t !== SIGHASH_ALL)
-        ? row('Sighash types', sighashTypes.map((t) => `0x${t.toString(16).padStart(2, '0')}`).join(', '))
+      row(t('label_fee'), totalIn !== null ? `${formatKRX(totalIn - totalOut)} KRX` : t('approval_fee_unknown')),
+      Number(tx.lock_time ?? 0) > 0 ? row(t('approval_locktime'), String(tx.lock_time)) : null,
+      sighashTypes.some((ty) => ty !== SIGHASH_ALL)
+        ? row(t('approval_sighash_types'), sighashTypes.map((ty) => `0x${ty.toString(16).padStart(2, '0')}`).join(', '))
         : null
     ),
     hasCustomScript
       ? el('div', { id: 'sign-tx-script-warning', class: 'warn-box', style: 'margin-top:12px' },
-          '⚠ Spends custom script(s) — e.g. an HTLC claim or refund. Make sure you trust this site.')
+          t('approval_custom_script_warn'))
       : null,
     el('div', { class: broadcast ? 'warn-box' : 'hint', id: 'sign-tx-broadcast-note', style: 'margin-top:12px;text-align:left' },
       broadcast
-        ? 'The transaction will be broadcast to the network immediately after signing.'
-        : 'The signed transaction is returned to the site — the wallet does NOT broadcast it.'),
+        ? t('approval_broadcast_yes')
+        : t('approval_broadcast_no')),
     el('details', { class: 'raw-tx', style: 'margin-top:12px' },
-      el('summary', {}, 'Raw transaction JSON'),
+      el('summary', {}, t('approval_raw_tx')),
       el('pre', { id: 'sign-tx-raw', class: 'approval-pre' }, JSON.stringify(tx, null, 2))),
     status,
     actions(async (busyText) => {
       try {
         const { wallet } = await signingContext();
-        busyText('⚙ Signing…');
+        busyText(t('status_signing'));
         const signed = signTxJson(tx, wallet.privateKeyHex);
         if (broadcast) {
-          busyText('📡 Broadcasting…');
+          busyText(t('status_broadcasting'));
           const res = await api.broadcast(signed.tx);
           await sendResult({ tx: signed.tx, transaction_id: res.transaction_id });
         } else {
@@ -347,7 +358,7 @@ function renderSignTx() {
         setStatus(status, 'error', e instanceof Error ? e.message : String(e));
         throw e;
       }
-    }, 'Sign')
+    }, t('btn_sign'))
   );
 }
 
@@ -368,28 +379,28 @@ function renderInference() {
 
   const status = statusBox();
   show(
-    header('AI inference'),
+    header(t('approval_inference_action')),
     el('div', { class: 'card stack', style: 'margin-top:12px' },
-      el('span', { class: 'label' }, 'Query'),
+      el('span', { class: 'label' }, t('approval_query')),
       el('pre', { id: 'inference-prompt', class: 'approval-pre' }, prompt),
-      row('Model', model.name),
-      row('Max tokens', String(maxTokens)),
-      row('Reward (escrow)', `${formatKRX(reward)} KRX`),
-      row('Fee', `${formatKRX(fee)} KRX`),
-      row('Total', `${formatKRX(reward + fee)} KRX`)
+      row(t('label_model'), model.name),
+      row(t('approval_max_tokens'), String(maxTokens)),
+      row(t('approval_reward_escrow'), `${formatKRX(reward)} KRX`),
+      row(t('label_fee'), `${formatKRX(fee)} KRX`),
+      row(t('label_total'), `${formatKRX(reward + fee)} KRX`)
     ),
     status,
     actions(async (busy) => {
       try {
         const { wallet } = await signingContext();
-        busy('⏳ Loading UTXOs…');
+        busy(t('status_loading_utxos'));
         const capabilities = await api.capabilities().catch(() => null);
         const cap = capabilities?.find((c) => c.model === modelKey);
         if (capabilities && (cap?.miner_count ?? 0) === 0) {
           throw new Error(`No active miners for ${model.name} — the request would stay pending, fees lost`);
         }
         const [utxos, info] = await Promise.all([api.utxos(wallet.address, 400), api.info().catch(() => null)]);
-        busy('⚙ Signing…');
+        busy(t('status_signing'));
         const payloadHex = buildInferencePayload(prompt.trim(), model.idHex, maxTokens, reward, fee);
         const minerPubkey = cap?.miner_pubkeys?.[0];
         const built = buildInferenceTx({
@@ -401,14 +412,14 @@ function renderInference() {
           payloadHex,
           escrow: minerPubkey ? { pubkeyHex: minerPubkey, amountSompi: reward } : undefined,
         });
-        busy('📡 Broadcasting…');
+        busy(t('status_broadcasting'));
         const res = await api.broadcast(built.tx);
         await sendResult(res.transaction_id);
       } catch (e) {
         setStatus(status, 'error', e instanceof Error ? e.message : String(e));
         throw e;
       }
-    }, 'Approve & submit')
+    }, t('btn_approve_submit'))
   );
 }
 
@@ -424,14 +435,15 @@ function renderRequest() {
 }
 
 async function init() {
+  await loadLocale();
   req = reqId ? await getPendingRequest(reqId) : null;
   if (!req) {
-    const close = el('button', { class: 'btn ghost' }, 'Close');
+    const close = el('button', { class: 'btn ghost' }, t('btn_close'));
     close.addEventListener('click', () => window.close());
     show(
       el('div', { class: 'card stack' },
-        el('span', { class: 'label' }, 'Keryx Wallet'),
-        el('p', { class: 'hint', style: 'text-align:left' }, 'This request has expired or was already handled.')),
+        el('span', { class: 'label' }, t('approval_expired_title')),
+        el('p', { class: 'hint', style: 'text-align:left' }, t('approval_expired_body'))),
       el('div', { class: 'actions-row', style: 'margin-top:12px' }, close)
     );
     return;

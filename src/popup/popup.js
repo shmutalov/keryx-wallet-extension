@@ -29,6 +29,7 @@ import {
   pushRecentAddress,
 } from '../lib/book.js';
 import { api, API_BASE, DEFAULT_API_BASE, loadApiBase, setApiBase } from '../lib/api.js';
+import { t, loadLocale, setLocale, getLocaleOverride, SUPPORTED_LOCALES, LOCALE_LABELS } from '../lib/i18n.js';
 import { createVault, unlockVault, updateVault, vaultExists, clearVault } from '../lib/vault.js';
 import { startSession, getSession, updateSessionStore, touchSession, endSession } from '../lib/session.js';
 import { getConnections, removeConnection } from '../lib/provider.js';
@@ -119,7 +120,7 @@ const LOGO_SVG =
   '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--mx-bright)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(46,227,88,.45))"><path d="M8 3v18"></path><path d="M8 12h3"></path><path d="M11 12 17 4h3l-6 8 6 8h-3l-6-8"></path><circle cx="8" cy="3" r="1.1" fill="var(--mx-bright)"></circle><circle cx="8" cy="21" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="4" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="20" r="1.1" fill="var(--mx-bright)"></circle></svg>';
 
 function copyButton(getText, label = '⧉', copiedLabel = '✓', id) {
-  const btn = el('button', { ...(id ? { id } : {}), class: 'btn-small', title: 'Copy to clipboard' }, label);
+  const btn = el('button', { ...(id ? { id } : {}), class: 'btn-small', title: t('title_copy') }, label);
   btn.addEventListener('click', () => {
     navigator.clipboard.writeText(getText()).catch(() => {});
     btn.textContent = copiedLabel;
@@ -132,19 +133,19 @@ function copyButton(getText, label = '⧉', copiedLabel = '✓', id) {
   return btn;
 }
 
-function txRow(t) {
-  const spend = t.is_spend === true;
-  const amount = formatKRX(Math.abs(t.amount_sompi ?? 0));
-  const idText = t.tx_id.length <= 20 ? t.tx_id : `${t.tx_id.slice(0, 14)}…${t.tx_id.slice(-8)}`;
+function txRow(tx) {
+  const spend = tx.is_spend === true;
+  const amount = formatKRX(Math.abs(tx.amount_sompi ?? 0));
+  const idText = tx.tx_id.length <= 20 ? tx.tx_id : `${tx.tx_id.slice(0, 14)}…${tx.tx_id.slice(-8)}`;
   return el('div', { class: 'tx-row' },
-    el('a', { href: `${API_BASE}/tx/${t.tx_id}`, target: '_blank', rel: 'noreferrer' }, idText),
+    el('a', { href: `${API_BASE}/tx/${tx.tx_id}`, target: '_blank', rel: 'noreferrer' }, idText),
     el('span', { class: `tx-amount ${spend ? 'out' : 'in'}` }, `${spend ? '−' : '+'}${amount} KRX`));
 }
 
 function passwordFields() {
   const password = el('input', { id: 'pw-input', type: 'password', placeholder: '••••••••' });
   const confirm = el('input', { id: 'pw-confirm', type: 'password', placeholder: '••••••••' });
-  const mismatch = el('div', { class: 'error-text', style: 'display:none' }, "Passwords don't match.");
+  const mismatch = el('div', { class: 'error-text', style: 'display:none' }, t('err_passwords_mismatch'));
   const checkMatch = () => {
     mismatch.style.display = confirm.value && password.value !== confirm.value ? '' : 'none';
   };
@@ -153,8 +154,8 @@ function passwordFields() {
   const block = el(
     'div',
     {},
-    el('div', { class: 'field' }, el('span', { class: 'label' }, 'Session password (min. 6 characters)'), password),
-    el('div', { class: 'field' }, el('span', { class: 'label' }, 'Confirm password'), confirm, mismatch)
+    el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_session_password_min')), password),
+    el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_confirm_password')), confirm, mismatch)
   );
   return {
     block,
@@ -169,16 +170,16 @@ function passwordFields() {
 function renderHome() {
   show(
     el('div', { class: 'home-logo', html: LOGO_SVG }),
-    el('h1', { class: 'glow' }, 'KERYX WALLET'),
-    el('p', { class: 'subtitle' }, 'Client-side wallet — private keys never leave your device'),
+    el('h1', { class: 'glow' }, t('home_title')),
+    el('p', { class: 'subtitle' }, t('home_subtitle')),
     el(
       'div',
       { class: 'card stack', style: 'margin-top:10px' },
-      el('button', { id: 'create-btn', class: 'btn', onclick: () => renderCreateBackup({ firstRun: true }) }, '⊕ Create a new wallet'),
-      el('button', { id: 'import-btn', class: 'btn ghost', onclick: () => renderImport({ firstRun: true }) }, '↩ Import with mnemonic phrase')
+      el('button', { id: 'create-btn', class: 'btn', onclick: () => renderCreateBackup({ firstRun: true }) }, t('home_create')),
+      el('button', { id: 'import-btn', class: 'btn ghost', onclick: () => renderImport({ firstRun: true }) }, t('home_import'))
     ),
     el('div', { class: 'spacer' }),
-    el('p', { class: 'hint' }, 'Private keys stay in your browser — they never leave your machine.')
+    el('p', { class: 'hint' }, t('home_hint'))
   );
 }
 
@@ -194,7 +195,7 @@ function renderCreateBackup({ firstRun, mnemonic: preset }) {
     address = deriveWallet(mnemonic).address;
   } catch {}
 
-  const submit = el('button', { id: 'next-btn', class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
+  const submit = el('button', { id: 'next-btn', class: 'btn', disabled: '' }, firstRun ? t('btn_next') : t('btn_add_account'));
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
   const checkbox = el('input', { id: 'backup-confirm', type: 'checkbox' });
   checkbox.addEventListener('change', () => {
@@ -212,37 +213,37 @@ function renderCreateBackup({ firstRun, mnemonic: preset }) {
       return;
     }
     submit.setAttribute('disabled', '');
-    submit.textContent = 'Adding…';
+    submit.textContent = t('status_adding');
     try {
       await addAccount({ id: crypto.randomUUID(), label: nextLabel(), mnemonic, index: 0 });
     } catch (e) {
       errorBox.textContent = String(e);
       errorBox.style.display = '';
       submit.removeAttribute('disabled');
-      submit.textContent = 'Add account →';
+      submit.textContent = t('btn_add_account');
     }
   });
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: firstRun ? renderHome : renderAddAccount }, '← Back'),
-      el('h2', {}, firstRun ? 'New wallet' : 'New seed phrase')
+      el('button', { class: 'link-btn', onclick: firstRun ? renderHome : renderAddAccount }, t('nav_back')),
+      el('h2', {}, firstRun ? t('title_new_wallet') : t('title_new_seed'))
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Mnemonic phrase (24 words) — save it in a safe place'),
+      el('span', { class: 'label' }, t('backup_mnemonic_label')),
       el('div', { class: 'mnemonic-grid' },
         words.map((w, i) => el('span', {}, el('i', {}, String(i + 1)), w))
       ),
-      el('div', { style: 'margin-top:10px' }, copyButton(() => mnemonic, '⧉ Copy phrase', '✓ copied'))
+      el('div', { style: 'margin-top:10px' }, copyButton(() => mnemonic, t('copy_phrase'), t('copied')))
     ),
     address &&
       el('div', { class: 'card' },
-        el('span', { class: 'label' }, 'Generated address'),
+        el('span', { class: 'label' }, t('backup_generated_address')),
         el('div', { class: 'addr' }, address)
       ),
     el('div', { class: 'card' },
       el('label', { class: 'checkbox-row' }, checkbox,
-        el('span', {}, 'I have saved my mnemonic phrase. I understand that without it, I cannot recover my funds.'))
+        el('span', {}, t('backup_confirm_saved')))
     ),
     errorBox,
     submit
@@ -257,7 +258,7 @@ function renderCreateBackup({ firstRun, mnemonic: preset }) {
 function renderSetPassword({ account, onBack }) {
   const pw = passwordFields();
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const submit = el('button', { id: 'open-wallet-btn', class: 'btn', disabled: '' }, 'Open wallet →');
+  const submit = el('button', { id: 'open-wallet-btn', class: 'btn', disabled: '' }, t('btn_open_wallet'));
   const refresh = () => {
     if (pw.valid()) submit.removeAttribute('disabled');
     else submit.setAttribute('disabled', '');
@@ -267,7 +268,7 @@ function renderSetPassword({ account, onBack }) {
   submit.addEventListener('click', async () => {
     if (!pw.valid()) return;
     submit.setAttribute('disabled', '');
-    submit.textContent = 'Encrypting…';
+    submit.textContent = t('status_encrypting');
     errorBox.style.display = 'none';
     try {
       const store = { accounts: [account] };
@@ -281,41 +282,41 @@ function renderSetPassword({ account, onBack }) {
       errorBox.textContent = String(e);
       errorBox.style.display = '';
       submit.removeAttribute('disabled');
-      submit.textContent = 'Open wallet →';
+      submit.textContent = t('btn_open_wallet');
     }
   });
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: onBack }, '← Back'),
-      el('h2', {}, 'Set session password')
+      el('button', { class: 'link-btn', onclick: onBack }, t('nav_back')),
+      el('h2', {}, t('title_set_password'))
     ),
     el('div', { class: 'card stack' },
       el('p', { class: 'subtitle', style: 'text-align:left;margin:0' },
-        'One password protects your whole wallet in this browser — every account you add is secured by it. You\'ll use it instead of the mnemonic on future visits.'),
+        t('setpw_intro')),
       pw.block,
       errorBox,
       submit
     ),
     el('div', { class: 'spacer' }),
-    el('p', { class: 'hint' }, 'Password is never stored. It encrypts your seed phrases on this device.')
+    el('p', { class: 'hint' }, t('setpw_hint'))
   );
   setTimeout(() => pw.inputs[0].focus(), 50);
 }
 
 /** Import a seed phrase. firstRun: continue to password page. Unlocked: adds the account. */
 function renderImport({ firstRun }) {
-  const textarea = el('textarea', { id: 'mnemonic-input', rows: '3', placeholder: 'word1 word2 word3 …' });
+  const textarea = el('textarea', { id: 'mnemonic-input', rows: '3', placeholder: t('import_placeholder') });
   const invalid = el('div', { class: 'error-text', style: 'display:none' });
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const submit = el('button', { id: 'next-btn', class: 'btn', disabled: '' }, firstRun ? 'Next →' : 'Add account →');
+  const submit = el('button', { id: 'next-btn', class: 'btn', disabled: '' }, firstRun ? t('btn_next') : t('btn_add_account'));
 
   const normalized = () => textarea.value.trim().toLowerCase().replace(/\s+/g, ' ');
   const refresh = () => {
     const m = normalized();
     let msg = '';
-    if (textarea.value.trim() && !validateMnemonic(m)) msg = 'Invalid mnemonic — check spelling and word count.';
-    else if (!firstRun && m && findDuplicate(m, 0)) msg = 'This seed phrase is already added.';
+    if (textarea.value.trim() && !validateMnemonic(m)) msg = t('err_invalid_mnemonic');
+    else if (!firstRun && m && findDuplicate(m, 0)) msg = t('err_seed_already_added');
     invalid.textContent = msg;
     invalid.style.display = msg ? '' : 'none';
     if (m && !msg && validateMnemonic(m)) submit.removeAttribute('disabled');
@@ -335,24 +336,24 @@ function renderImport({ firstRun }) {
     }
     if (findDuplicate(mnemonic, 0)) return;
     submit.setAttribute('disabled', '');
-    submit.textContent = 'Adding…';
+    submit.textContent = t('status_adding');
     try {
       await addAccount({ id: crypto.randomUUID(), label: nextLabel(), mnemonic, index: 0 });
     } catch (e) {
       errorBox.textContent = String(e);
       errorBox.style.display = '';
       submit.removeAttribute('disabled');
-      submit.textContent = 'Add account →';
+      submit.textContent = t('btn_add_account');
     }
   });
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: firstRun ? renderHome : renderAddAccount }, '← Back'),
-      el('h2', {}, firstRun ? 'Import wallet' : 'Import seed phrase')
+      el('button', { class: 'link-btn', onclick: firstRun ? renderHome : renderAddAccount }, t('nav_back')),
+      el('h2', {}, firstRun ? t('title_import_wallet') : t('title_import_seed'))
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Mnemonic phrase (12 or 24 words)'),
+      el('span', { class: 'label' }, t('import_mnemonic_label')),
       textarea,
       invalid
     ),
@@ -361,7 +362,7 @@ function renderImport({ firstRun }) {
     el('div', { class: 'spacer' }),
     firstRun &&
       el('p', { class: 'hint' },
-        'Password is never stored. To remove your wallet, click "Reset" or clear extension data.')
+        t('import_hint'))
   );
 }
 
@@ -373,8 +374,8 @@ function renderAddAccount() {
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
-      el('h2', {}, 'Add account')
+      el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back')),
+      el('h2', {}, t('title_add_account'))
     ),
     el('div', { class: 'card stack' },
       el('button', {
@@ -388,16 +389,16 @@ function renderAddAccount() {
             index: derivedIndex,
           });
         },
-      }, '⊕ New address from current seed'),
+      }, t('addacct_new_address')),
       el('p', { class: 'hint', style: 'text-align:left' },
-        `Derives ${DERIVATION_BASE}/${derivedIndex} from ${acct.label}'s seed phrase — nothing new to back up.`)
+        t('addacct_derive_hint', `${DERIVATION_BASE}/${derivedIndex}`, acct.label))
     ),
     el('div', { class: 'card stack' },
-      el('button', { id: 'new-seed-btn', class: 'btn ghost', onclick: () => renderCreateBackup({ firstRun: false }) }, '✚ Create a new seed phrase'),
-      el('button', { id: 'import-seed-btn', class: 'btn ghost', onclick: () => renderImport({ firstRun: false }) }, '↩ Import a seed phrase')
+      el('button', { id: 'new-seed-btn', class: 'btn ghost', onclick: () => renderCreateBackup({ firstRun: false }) }, t('addacct_new_seed')),
+      el('button', { id: 'import-seed-btn', class: 'btn ghost', onclick: () => renderImport({ firstRun: false }) }, t('addacct_import_seed'))
     ),
     el('div', { class: 'spacer' }),
-    el('p', { class: 'hint' }, 'All accounts are secured by your one session password.')
+    el('p', { class: 'hint' }, t('addacct_hint'))
   );
 }
 
@@ -418,12 +419,12 @@ function renderSettings() {
 
   // dApp connections (origins granted through the provider's approval flow)
   const sitesBox = el('div', { id: 'connected-sites', class: 'stack' },
-    el('span', { class: 'hint' }, 'Loading…'));
+    el('span', { class: 'hint' }, t('common_loading')));
   async function refreshSites() {
     const connections = await getConnections();
     const origins = Object.keys(connections).sort();
     if (origins.length === 0) {
-      sitesBox.replaceChildren(el('span', { class: 'hint' }, 'No sites connected.'));
+      sitesBox.replaceChildren(el('span', { class: 'hint' }, t('sites_none')));
       return;
     }
     sitesBox.replaceChildren(...origins.map((origin) => {
@@ -432,7 +433,7 @@ function renderSettings() {
       const remove = el('button', {
         id: `site-disconnect-${origin.replace(/[^a-z0-9]/gi, '-')}`,
         class: 'btn-small',
-        title: 'Disconnect site',
+        title: t('title_disconnect_site'),
       }, '✕');
       remove.addEventListener('click', async () => {
         await removeConnection(origin);
@@ -449,20 +450,30 @@ function renderSettings() {
   }
   refreshSites();
 
+  // interface language (auto = follow the browser); applies immediately on change
+  const langSelect = el('select', { id: 'lang-select', class: 'account-select' });
+  langSelect.append(el('option', { value: 'auto' }, t('locale_auto')));
+  for (const loc of SUPPORTED_LOCALES) langSelect.append(el('option', { value: loc }, LOCALE_LABELS[loc]));
+  getLocaleOverride().then((v) => { langSelect.value = v; });
+  langSelect.addEventListener('change', async () => {
+    await setLocale(langSelect.value);
+    renderSettings();
+  });
+
   // configurable API host (empty = official default)
   const hostInput = el('input', {
-    id: 'api-host-input', type: 'text', placeholder: `${DEFAULT_API_BASE} (default)`,
+    id: 'api-host-input', type: 'text', placeholder: t('host_placeholder_default', DEFAULT_API_BASE),
     autocomplete: 'off', spellcheck: 'false',
   });
   hostInput.value = API_BASE === DEFAULT_API_BASE ? '' : API_BASE;
   const hostStatus = el('div', { id: 'api-host-status', style: 'display:none' });
-  const hostSave = el('button', { id: 'api-host-save', class: 'btn ghost' }, 'Save API host');
+  const hostSave = el('button', { id: 'api-host-save', class: 'btn ghost' }, t('host_save'));
   hostSave.addEventListener('click', async () => {
     try {
       const base = await setApiBase(hostInput.value);
       hostInput.value = base === DEFAULT_API_BASE ? '' : base;
       hostStatus.className = 'success-box';
-      hostStatus.textContent = `Using ${base}${base === DEFAULT_API_BASE ? ' (default)' : ''}`;
+      hostStatus.textContent = t('host_using', base) + (base === DEFAULT_API_BASE ? t('host_default_suffix') : '');
     } catch (e) {
       hostStatus.className = 'error-box';
       hostStatus.textContent = e instanceof Error ? e.message : String(e);
@@ -470,8 +481,8 @@ function renderSettings() {
     hostStatus.style.display = '';
   });
 
-  const confirmInput = el('input', { id: 'reset-confirm-input', type: 'text', placeholder: 'Type RESET to confirm', autocomplete: 'off' });
-  const resetBtn = el('button', { id: 'reset-btn', class: 'btn danger', disabled: '' }, 'Reset wallet');
+  const confirmInput = el('input', { id: 'reset-confirm-input', type: 'text', placeholder: t('reset_confirm_placeholder'), autocomplete: 'off' });
+  const resetBtn = el('button', { id: 'reset-btn', class: 'btn danger', disabled: '' }, t('btn_reset_wallet'));
   confirmInput.addEventListener('input', () => {
     if (confirmInput.value.trim() === 'RESET') resetBtn.removeAttribute('disabled');
     else resetBtn.setAttribute('disabled', '');
@@ -479,55 +490,60 @@ function renderSettings() {
   resetBtn.addEventListener('click', async () => {
     if (confirmInput.value.trim() !== 'RESET') return;
     resetBtn.setAttribute('disabled', '');
-    resetBtn.textContent = 'Resetting…';
+    resetBtn.textContent = t('status_resetting');
     await resetWallet();
   });
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
-      el('h2', {}, 'Settings')
+      el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back')),
+      el('h2', {}, t('title_settings'))
+    ),
+    el('div', { class: 'card stack' },
+      el('span', { class: 'label' }, t('settings_language_label')),
+      el('p', { class: 'hint', style: 'text-align:left' }, t('settings_language_hint')),
+      langSelect
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Session'),
-      infoRow('Auto-lock', 'after 15 min of inactivity'),
-      infoRow('Accounts', String(state.store.accounts.length)),
-      infoRow('Network', 'keryx-mainnet'),
-      infoRow('Version', version)
+      el('span', { class: 'label' }, t('settings_session')),
+      infoRow(t('settings_autolock_label'), t('settings_autolock_value')),
+      infoRow(t('settings_accounts'), String(state.store.accounts.length)),
+      infoRow(t('settings_network'), 'keryx-mainnet'),
+      infoRow(t('settings_version'), version)
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Address book'),
+      el('span', { class: 'label' }, t('settings_addressbook_label')),
       el('button', {
         id: 'settings-book-btn',
         class: 'btn ghost',
         onclick: () => renderAddressBook({ onBack: renderSettings }),
-      }, '⌂ Manage address book')
+      }, t('settings_manage_book'))
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Connected sites'),
+      el('span', { class: 'label' }, t('settings_connected_sites')),
       el('p', { class: 'hint', style: 'text-align:left;margin-bottom:8px' },
-        'Sites that can see your address and request transaction approvals via window.keryx.'),
+        t('settings_connected_hint')),
       sitesBox
     ),
     el('div', { class: 'card stack' },
-      el('span', { class: 'label' }, 'Network'),
+      el('span', { class: 'label' }, t('settings_network')),
       el('p', { class: 'hint', style: 'text-align:left' },
-        'API host used for balances, history and broadcasting. Leave empty for the official host. Use https:// (http:// only for localhost). A custom host must allow CORS (a self-hosted Keryx indexer does).'),
+        t('settings_network_hint')),
       hostInput,
       hostStatus,
       hostSave
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Backup'),
+      el('span', { class: 'label' }, t('settings_backup_label')),
       el('button', { id: 'settings-backup-btn', class: 'btn ghost', onclick: renderBackup },
-        '⧉ Backup seed phrase'),
+        t('settings_backup_btn')),
       el('p', { class: 'hint', style: 'text-align:left;margin-top:8px' },
-        'Reveals a seed phrase after re-entering your password.')
+        t('settings_backup_hint'))
     ),
     el('div', { class: 'card danger stack' },
-      el('span', { class: 'label danger' }, 'Danger zone'),
+      el('span', { class: 'label danger' }, t('settings_danger_zone')),
       el('p', { class: 'hint', style: 'text-align:left' },
-        'Reset removes ALL accounts and the encrypted vault from this browser. Funds are only recoverable with the seed phrases — make sure every one of them is backed up before continuing.'),
+        t('settings_danger_hint')),
       confirmInput,
       resetBtn
     )
@@ -546,19 +562,19 @@ function renderInference() {
   let challengesByPrefix = new Map();
   let busy = false;
 
-  const availLine = el('div', { class: 'balance-meta' }, 'Balance: …');
+  const availLine = el('div', { class: 'balance-meta' }, `${t('label_balance')}: …`);
   const modelSelect = el('select', { id: 'inf-model', class: 'account-select' });
   for (const m of INFERENCE_MODELS) {
     const opt = el('option', { value: m.key },
-      `${m.label} · from ${formatKRX(m.baseSompi)} KRX`);
+      `${m.label} · ${t('inf_from_price', formatKRX(m.baseSompi))}`);
     if (m.key === 'gemma-3-4b') opt.setAttribute('selected', '');
     modelSelect.append(opt);
   }
   const minersLine = el('div', { id: 'inf-miners', class: 'balance-meta' }, '');
   const promptInput = el('textarea', {
-    id: 'inf-prompt', rows: '4', placeholder: 'Enter your query for the Keryx network…',
+    id: 'inf-prompt', rows: '4', placeholder: t('inf_prompt_placeholder'),
   });
-  const charCount = el('span', { class: 'tx-count' }, '0 chars');
+  const charCount = el('span', { class: 'tx-count' }, t('inf_chars', '0'));
   const tokensVal = el('span', { id: 'inf-tokens-val', style: 'color:var(--mx-bright)' }, '256');
   const tokensSlider = el('input', {
     id: 'inf-tokens', type: 'range', min: '64', max: '4096', step: '64', value: '256',
@@ -569,9 +585,9 @@ function renderInference() {
   });
   const totalLine = el('div', { id: 'inf-total', class: 'balance-meta' }, '');
   const statusBox = el('div', { id: 'inf-status', style: 'display:none' });
-  const submit = el('button', { id: 'inf-submit', class: 'btn', disabled: '' }, 'Submit to network →');
+  const submit = el('button', { id: 'inf-submit', class: 'btn', disabled: '' }, t('inf_submit'));
   const feedList = el('div', { id: 'inf-feed', class: 'stack' },
-    el('div', { class: 'loading' }, 'Loading…'));
+    el('div', { class: 'loading' }, t('common_loading')));
 
   const toSompi = (v) => parseKRX((v || '0').trim().replace(',', '.'));
   const feeSompi = () => Math.max(MIN_FEE_SOMPI, toSompi(feeInput.value) || 0);
@@ -594,13 +610,14 @@ function renderInference() {
   function refreshEstimate() {
     const model = getModel(modelSelect.value);
     const { count } = minerInfo();
-    totalLine.textContent =
-      `Total: ${formatKRX(totalSompi())} KRX (${formatKRX(model.baseSompi)} base + ` +
-      `${formatKRX(inferenceRewardSompi(modelSelect.value, maxTokens()) - model.baseSompi)} tokens + ` +
-      `${formatKRX(feeSompi())} fee)`;
-    if (count === null) minersLine.textContent = 'Miner availability unknown (node unreachable)';
-    else if (count === 0) minersLine.textContent = `⚠ No active miners for ${model.name} — request would stay pending, fees lost.`;
-    else minersLine.textContent = `${count} active miner${count > 1 ? 's' : ''} for this model`;
+    totalLine.textContent = t('inf_total',
+      formatKRX(totalSompi()),
+      formatKRX(model.baseSompi),
+      formatKRX(inferenceRewardSompi(modelSelect.value, maxTokens()) - model.baseSompi),
+      formatKRX(feeSompi()));
+    if (count === null) minersLine.textContent = t('inf_miners_unknown');
+    else if (count === 0) minersLine.textContent = t('inf_no_miners', model.name);
+    else minersLine.textContent = t('inf_miners_count', count);
     minersLine.style.color = count === 0 ? 'var(--mx-error)' : '';
     validate();
   }
@@ -621,7 +638,7 @@ function renderInference() {
     refreshEstimate();
   });
   promptInput.addEventListener('input', () => {
-    charCount.textContent = `${promptInput.value.length} chars`;
+    charCount.textContent = t('inf_chars', promptInput.value.length);
     validate();
   });
   promptInput.addEventListener('keydown', (e) => {
@@ -644,12 +661,12 @@ function renderInference() {
     validate();
     statusBox.style.display = 'none';
     try {
-      submit.textContent = '⏳ Loading UTXOs…';
+      submit.textContent = t('status_loading_utxos');
       const [utxos, info] = await Promise.all([
         api.utxos(address, 400),
         api.info().catch(() => null),
       ]);
-      submit.textContent = '⚙ Signing…';
+      submit.textContent = t('status_signing');
       const payloadHex = buildInferencePayload(prompt, model.idHex, maxTokens(), reward, fee);
       const { pubkey } = minerInfo();
       const built = buildInferenceTx({
@@ -661,23 +678,23 @@ function renderInference() {
         payloadHex,
         escrow: pubkey ? { pubkeyHex: pubkey, amountSompi: reward } : undefined,
       });
-      submit.textContent = '📡 Broadcasting…';
+      submit.textContent = t('status_broadcasting');
       const res = await api.broadcast(built.tx);
       setStatus('success',
-        el('div', {}, 'Query submitted on-chain ✓'),
-        el('div', { class: 'tx-link' }, 'TX: ',
+        el('div', {}, t('inf_submitted')),
+        el('div', { class: 'tx-link' }, t('inf_tx_label'),
           el('a', { href: `${API_BASE}/tx/${res.transaction_id}`, target: '_blank', rel: 'noreferrer' },
             res.transaction_id)),
         el('div', { class: 'hint', style: 'text-align:left;margin-top:4px' },
-          'Miners pick it up within the next blocks — watch the feed below.'));
+          t('inf_submitted_hint')));
       promptInput.value = '';
-      charCount.textContent = '0 chars';
+      charCount.textContent = t('inf_chars', '0');
       loadOverviewData();
     } catch (e) {
       setStatus('error', e instanceof Error ? e.message : String(e));
     } finally {
       busy = false;
-      submit.textContent = 'Submit to network →';
+      submit.textContent = t('inf_submit');
       validate();
     }
   }
@@ -687,9 +704,9 @@ function renderInference() {
     try {
       const bal = await api.balance(address);
       availableSompi = bal.balance_sompi ?? 0;
-      availLine.textContent = `Balance: ${formatKRX(availableSompi)} KRX`;
+      availLine.textContent = `${t('label_balance')}: ${formatKRX(availableSompi)} KRX`;
     } catch {
-      availLine.textContent = 'Balance: — (node unreachable)';
+      availLine.textContent = `${t('label_balance')}: — (${t('node_unreachable')})`;
     }
     validate();
   }
@@ -703,17 +720,17 @@ function renderInference() {
       const body = el('div', { class: `inf-result-text${long ? ' clamped' : ''}` }, text);
       const kids = [body];
       if (long) {
-        const toggle = el('button', { class: 'link-btn', style: 'font-size:10px;margin-top:2px' }, '▼ show more');
+        const toggle = el('button', { class: 'link-btn', style: 'font-size:10px;margin-top:2px' }, t('inf_show_more'));
         toggle.addEventListener('click', () => {
           const clamped = body.classList.toggle('clamped');
-          toggle.textContent = clamped ? '▼ show more' : '▲ show less';
+          toggle.textContent = clamped ? t('inf_show_more') : t('inf_show_less');
         });
         kids.push(toggle);
       }
       box.replaceChildren(...kids);
     };
     if (/^Qm/.test(r) && r.length === 46) {
-      box.replaceChildren(el('span', { class: 'hint' }, 'fetching response…'));
+      box.replaceChildren(el('span', { class: 'hint' }, t('inf_fetching')));
       if (!ipfsCache.has(r)) ipfsCache.set(r, api.ipfsText(r));
       Promise.resolve(ipfsCache.get(r)).then((text) => {
         ipfsCache.set(r, text);
@@ -744,19 +761,19 @@ function renderInference() {
       }
       if (!items.length) {
         feedList.replaceChildren(el('p', { class: 'hint', style: 'text-align:left' },
-          'No inference requests detected yet.'));
+          t('inf_no_requests')));
         return;
       }
       feedList.replaceChildren(...items.map((item) => {
         const challenge = item.payload_prefix ? challengesByPrefix.get(item.payload_prefix) : null;
         const slashed = !!challenge?.fraud_proven;
         const badge = slashed
-          ? el('span', { class: 'badge badge-bad' }, '⚡ SLASHED')
+          ? el('span', { class: 'badge badge-bad' }, t('badge_slashed'))
           : challenge
-            ? el('span', { class: 'badge badge-warn' }, '⚠ CHALLENGED')
+            ? el('span', { class: 'badge badge-warn' }, t('badge_challenged'))
             : item.result
-              ? el('span', { class: 'badge badge-ok' }, '✓ RESPONDED')
-              : el('span', { class: 'badge badge-pend' }, '⏳ PENDING');
+              ? el('span', { class: 'badge badge-ok' }, t('badge_responded'))
+              : el('span', { class: 'badge badge-pend' }, t('badge_pending'));
         // item.model is normally the key; fall back to id-hex resolution when
         // the API host returned an unrecognised (raw) model id.
         const modelName = (getModel(item.model) ?? getModelByIdHex(item.model))?.name ?? item.model;
@@ -786,29 +803,29 @@ function renderInference() {
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
-      el('h2', {}, 'AI Inference')
+      el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back')),
+      el('h2', {}, t('title_ai_inference'))
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, `From ${acct.label}`),
+      el('span', { class: 'label' }, t('label_from_account', acct.label)),
       el('div', { class: 'addr', style: 'font-size:10px' }, address),
       availLine
     ),
     el('div', { class: 'card' },
-      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Model'), modelSelect),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_model')), modelSelect),
       minersLine
     ),
     el('div', { class: 'card' },
       el('div', { class: 'field' },
-        el('span', { class: 'label' }, 'Prompt'),
+        el('span', { class: 'label' }, t('label_prompt')),
         promptInput),
       el('div', { class: 'slider-row' },
-        el('span', { class: 'tx-count', style: 'white-space:nowrap' }, 'Max tokens: ', tokensVal),
+        el('span', { class: 'tx-count', style: 'white-space:nowrap' }, t('inf_max_tokens_prefix'), tokensVal),
         tokensSlider,
         charCount),
       el('div', { class: 'send-row', style: 'margin-top:10px' },
         el('div', { class: 'field', style: 'width:110px' },
-          el('span', { class: 'label' }, 'Priority fee (KRX)'),
+          el('span', { class: 'label' }, t('inf_priority_fee')),
           feeInput),
         el('div', { class: 'field', style: 'flex:1;justify-content:flex-end' },
           totalLine))
@@ -817,12 +834,12 @@ function renderInference() {
     submit,
     el('div', { class: 'card' },
       el('div', { class: 'tx-head' },
-        el('span', { class: 'label', style: 'margin:0' }, 'Live inference feed'),
-        el('span', { class: 'tx-count' }, 'auto-refresh 5s')),
+        el('span', { class: 'label', style: 'margin:0' }, t('inf_live_feed')),
+        el('span', { class: 'tx-count' }, t('inf_autorefresh'))),
       feedList
     ),
     el('p', { class: 'hint' },
-      'Prompt goes on-chain in an AiRequest tx · miners run the model · result lands on IPFS.')
+      t('inf_footer'))
   );
 
   refreshEstimate();
@@ -847,28 +864,28 @@ function renderHistory() {
   const pagerBox = el('div', {});
 
   async function load() {
-    listBox.replaceChildren(el('div', { class: 'loading' }, 'Loading…'));
+    listBox.replaceChildren(el('div', { class: 'loading' }, t('common_loading')));
     try {
       const res = await api.addressTxs(address, PAGE, PAGE * page);
       const txs = res.transactions ?? [];
       const total = res.total_tx_count ?? 0;
-      countEl.textContent = `${total.toLocaleString('en-US')} txs`;
+      countEl.textContent = t('txs_count', total.toLocaleString('en-US'));
       if (!txs.length) {
-        listBox.replaceChildren(el('p', { class: 'hint', style: 'text-align:left;padding:8px 0' }, 'No transactions yet.'));
+        listBox.replaceChildren(el('p', { class: 'hint', style: 'text-align:left;padding:8px 0' }, t('hist_none')));
         pagerBox.replaceChildren();
         return;
       }
       listBox.replaceChildren(...txs.map(txRow));
       const pages = Math.max(1, Math.ceil(total / PAGE));
       if (pages > 1) {
-        const prev = el('button', { id: 'hist-prev', class: 'btn-small' }, '← Prev');
-        const next = el('button', { id: 'hist-next', class: 'btn-small' }, 'Next →');
+        const prev = el('button', { id: 'hist-prev', class: 'btn-small' }, t('hist_prev'));
+        const next = el('button', { id: 'hist-next', class: 'btn-small' }, t('hist_next'));
         if (page === 0) prev.setAttribute('disabled', '');
         if (page >= pages - 1) next.setAttribute('disabled', '');
         prev.addEventListener('click', () => { page = Math.max(0, page - 1); load(); });
         next.addEventListener('click', () => { page = Math.min(pages - 1, page + 1); load(); });
         pagerBox.replaceChildren(el('div', { class: 'pager' }, prev,
-          el('span', { id: 'hist-page' }, `Page ${page + 1} / ${pages}`), next));
+          el('span', { id: 'hist-page' }, t('hist_page', page + 1, pages)), next));
       } else {
         pagerBox.replaceChildren();
       }
@@ -881,8 +898,8 @@ function renderHistory() {
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
-      el('h2', {}, 'Transactions')
+      el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back')),
+      el('h2', {}, t('title_transactions'))
     ),
     el('div', { class: 'card' },
       el('div', { class: 'tx-head' },
@@ -911,7 +928,7 @@ function renderBackup() {
 
   const pwInput = el('input', { id: 'backup-pw', type: 'password', placeholder: '••••••••' });
   const errorBox = el('div', { id: 'backup-error', class: 'error-box', style: 'display:none' });
-  const revealBtn = el('button', { id: 'backup-reveal-btn', class: 'btn', disabled: '' }, 'Reveal seed phrase →');
+  const revealBtn = el('button', { id: 'backup-reveal-btn', class: 'btn', disabled: '' }, t('backup_reveal_btn'));
   const output = el('div', { id: 'backup-output', class: 'stack' });
   let busy = false;
 
@@ -924,13 +941,13 @@ function renderBackup() {
     if (!pwInput.value || busy) return;
     busy = true;
     revealBtn.setAttribute('disabled', '');
-    revealBtn.textContent = 'Verifying…';
+    revealBtn.textContent = t('status_verifying');
     errorBox.style.display = 'none';
     const res = await unlockVault(pwInput.value);
     busy = false;
-    revealBtn.textContent = 'Reveal seed phrase →';
+    revealBtn.textContent = t('backup_reveal_btn');
     if (!res) {
-      errorBox.textContent = 'Wrong password.';
+      errorBox.textContent = t('err_wrong_password_dot');
       errorBox.style.display = '';
       revealBtn.removeAttribute('disabled');
       return;
@@ -939,16 +956,16 @@ function renderBackup() {
     pwInput.value = '';
     output.replaceChildren(
       el('div', { class: 'card' },
-        el('span', { class: 'label' }, `${acct.label} — seed phrase`),
+        el('span', { class: 'label' }, t('backup_seed_of', acct.label)),
         el('div', { id: 'backup-phrase', class: 'mnemonic-grid' },
           acct.mnemonic.split(' ').map((w, i) => el('span', {}, el('i', {}, String(i + 1)), w))),
         el('p', { class: 'hint', style: 'text-align:left;margin-top:8px' },
-          `Derivation: ${DERIVATION_BASE}/${acct.index}`),
+          t('backup_derivation', `${DERIVATION_BASE}/${acct.index}`)),
         el('div', { style: 'margin-top:8px;display:flex;gap:8px' },
-          copyButton(() => acct.mnemonic, '⧉ Copy phrase', '✓ copied'),
+          copyButton(() => acct.mnemonic, t('copy_phrase'), t('copied')),
           el('button', {
             id: 'backup-hide-btn', class: 'btn-small', onclick: renderBackup,
-          }, 'Hide')))
+          }, t('btn_hide'))))
     );
   }
   revealBtn.addEventListener('click', doReveal);
@@ -958,17 +975,17 @@ function renderBackup() {
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderSettings }, '← Back'),
-      el('h2', {}, 'Backup seed phrase')
+      el('button', { class: 'link-btn', onclick: renderSettings }, t('nav_back')),
+      el('h2', {}, t('title_backup'))
     ),
     el('div', { class: 'card danger' },
-      el('span', { class: 'label danger' }, 'Read before revealing'),
+      el('span', { class: 'label danger' }, t('backup_read_before')),
       el('p', { class: 'hint', style: 'text-align:left' },
-        'Your seed phrase is the master key to your funds — anyone who sees it can steal them. Make sure no one is watching your screen and never enter it on any website.')
+        t('backup_warning'))
     ),
     el('div', { class: 'card stack' },
-      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Account'), select),
-      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Session password'), pwInput),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_account')), select),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_session_password')), pwInput),
       errorBox,
       revealBtn
     ),
@@ -979,10 +996,10 @@ function renderBackup() {
 
 /** Address book management. Reachable from Settings and the Send screen. */
 function renderAddressBook({ onBack = renderDashboard, prefillAddress = '' } = {}) {
-  const nameInput = el('input', { id: 'ab-name', type: 'text', placeholder: 'Name (e.g. Main, Bank)', maxlength: '24' });
-  const addrInput = el('input', { id: 'ab-address', type: 'text', placeholder: 'keryx:q…', value: prefillAddress, spellcheck: 'false' });
+  const nameInput = el('input', { id: 'ab-name', type: 'text', placeholder: t('ab_name_placeholder'), maxlength: '24' });
+  const addrInput = el('input', { id: 'ab-address', type: 'text', placeholder: t('ab_address_placeholder'), value: prefillAddress, spellcheck: 'false' });
   const errorText = el('div', { id: 'ab-error', class: 'error-text', style: 'display:none' });
-  const addBtn = el('button', { id: 'ab-add-btn', class: 'btn' }, '＋ Add entry');
+  const addBtn = el('button', { id: 'ab-add-btn', class: 'btn' }, t('ab_add_entry'));
   const listCard = el('div', { id: 'ab-list', class: 'card' });
 
   async function refreshList() {
@@ -995,7 +1012,7 @@ function renderAddressBook({ onBack = renderDashboard, prefillAddress = '' } = {
         el('button', {
           id: `ab-del-${i}`,
           class: 'btn-small danger',
-          title: `Remove ${e.name}`,
+          title: t('ab_remove', e.name),
           onclick: async () => {
             await removeBookEntry(e.address);
             refreshList();
@@ -1003,8 +1020,8 @@ function renderAddressBook({ onBack = renderDashboard, prefillAddress = '' } = {
         }, '✕'))
     );
     listCard.replaceChildren(
-      el('span', { class: 'label' }, 'Saved addresses'),
-      ...(rows.length ? rows : [el('p', { class: 'hint', style: 'text-align:left' }, 'No entries yet.')])
+      el('span', { class: 'label' }, t('ab_saved')),
+      ...(rows.length ? rows : [el('p', { class: 'hint', style: 'text-align:left' }, t('ab_none'))])
     );
   }
 
@@ -1023,12 +1040,12 @@ function renderAddressBook({ onBack = renderDashboard, prefillAddress = '' } = {
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: onBack }, '← Back'),
-      el('h2', {}, 'Address book')
+      el('button', { class: 'link-btn', onclick: onBack }, t('nav_back')),
+      el('h2', {}, t('title_address_book'))
     ),
     el('div', { class: 'card stack' },
-      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Name'), nameInput),
-      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Address'), addrInput, errorText),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_name')), nameInput),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_address')), addrInput, errorText),
       addBtn
     ),
     listCard
@@ -1047,12 +1064,12 @@ function renderSend() {
   let recents = [];
   let busy = false;
 
-  const availLine = el('div', { class: 'balance-meta' }, 'Available: …');
+  const availLine = el('div', { class: 'balance-meta' }, `${t('label_available')}: …`);
   const destInput = el('input', {
-    id: 'dest-input', type: 'text', placeholder: 'keryx:q… or pick from the list',
+    id: 'dest-input', type: 'text', placeholder: t('send_dest_placeholder'),
     autocomplete: 'off', spellcheck: 'false',
   });
-  const destError = el('div', { class: 'error-text', style: 'display:none' }, 'Invalid keryx: address.');
+  const destError = el('div', { class: 'error-text', style: 'display:none' }, t('err_invalid_address'));
   const suggest = el('div', { id: 'dest-suggest', class: 'suggest', style: 'display:none' });
   const amountInput = el('input', {
     id: 'amount-input', type: 'text', inputmode: 'decimal', placeholder: '0.001',
@@ -1062,9 +1079,9 @@ function renderSend() {
     id: 'fee-input', type: 'text', inputmode: 'decimal', value: '0.3',
     autocomplete: 'off', spellcheck: 'false',
   });
-  const feeError = el('div', { class: 'error-text', style: 'display:none' }, 'Minimum fee is 0.3 KRX.');
+  const feeError = el('div', { class: 'error-text', style: 'display:none' }, t('err_min_fee'));
   const statusBox = el('div', { id: 'send-status', style: 'display:none' });
-  const submit = el('button', { id: 'send-confirm-btn', class: 'btn', disabled: '' }, 'Send →');
+  const submit = el('button', { id: 'send-confirm-btn', class: 'btn', disabled: '' }, t('send_submit'));
 
   const destValid = () => isValidAddress(destInput.value.trim());
   // accept both "0.3" and "0,3"
@@ -1126,14 +1143,14 @@ function renderSend() {
   feeInput.addEventListener('input', validate);
 
   const maxBtn = el('button', {
-    id: 'max-btn', class: 'btn-small', title: 'Send entire available balance minus fee',
+    id: 'max-btn', class: 'btn-small', title: t('title_max'),
     onclick: () => {
       if (availableSompi == null) return;
       const max = Math.max(0, availableSompi - feeSompi());
       amountInput.value = formatKRX(max);
       validate();
     },
-  }, 'max');
+  }, t('btn_max'));
 
   function setStatus(kind, ...children) {
     statusBox.className = kind === 'error' ? 'error-box' : 'success-box';
@@ -1150,12 +1167,12 @@ function renderSend() {
     validate();
     statusBox.style.display = 'none';
     try {
-      submit.textContent = '⏳ Loading UTXOs…';
+      submit.textContent = t('status_loading_utxos');
       const [utxos, info] = await Promise.all([
         api.utxos(address, 2000),
         api.info().catch(() => null),
       ]);
-      submit.textContent = '⚙ Signing…';
+      submit.textContent = t('status_signing');
       const built = buildTransferTx({
         utxos,
         toAddress: dest,
@@ -1165,13 +1182,13 @@ function renderSend() {
         privateKeyHex: state.wallet.privateKeyHex,
         currentDaaScore: info?.last_daa_score ?? 0,
       });
-      submit.textContent = '📡 Broadcasting…';
+      submit.textContent = t('status_broadcasting');
       const res = await api.broadcast(built.tx);
       await pushRecentAddress(dest);
       recents = await getRecentAddresses();
       const children = [
-        el('div', {}, `Transaction sent! ${formatKRX(amount)} KRX → ${shortAddress(dest, 14, 6)}`),
-        el('div', { class: 'tx-link' }, 'TX ID: ',
+        el('div', {}, t('send_success', formatKRX(amount), shortAddress(dest, 14, 6))),
+        el('div', { class: 'tx-link' }, t('send_tx_label'),
           el('a', { href: `${API_BASE}/tx/${res.transaction_id}`, target: '_blank', rel: 'noreferrer' },
             res.transaction_id)),
       ];
@@ -1179,7 +1196,7 @@ function renderSend() {
         children.push(el('button', {
           id: 'save-dest-btn', class: 'btn-small', style: 'margin-top:6px',
           onclick: () => renderAddressBook({ onBack: renderSend, prefillAddress: dest }),
-        }, '＋ Save to address book'));
+        }, t('send_save_book')));
       }
       setStatus('success', ...children);
       amountInput.value = '';
@@ -1188,7 +1205,7 @@ function renderSend() {
       setStatus('error', e instanceof Error ? e.message : String(e));
     } finally {
       busy = false;
-      submit.textContent = 'Send →';
+      submit.textContent = t('send_submit');
       validate();
     }
   }
@@ -1198,25 +1215,25 @@ function renderSend() {
     try {
       const bal = await api.balance(address);
       availableSompi = bal.balance_sompi ?? 0;
-      availLine.textContent = `Available: ${formatKRX(availableSompi)} KRX`;
+      availLine.textContent = `${t('label_available')}: ${formatKRX(availableSompi)} KRX`;
     } catch {
-      availLine.textContent = 'Available: — (node unreachable)';
+      availLine.textContent = `${t('label_available')}: — (${t('node_unreachable')})`;
     }
   }
 
   show(
     el('div', { class: 'back-row' },
-      el('button', { class: 'link-btn', onclick: renderDashboard }, '← Back'),
-      el('h2', {}, 'Send KRX')
+      el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back')),
+      el('h2', {}, t('title_send_krx'))
     ),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, `From ${acct.label}`),
+      el('span', { class: 'label' }, t('label_from_account', acct.label)),
       el('div', { class: 'addr', style: 'font-size:10px' }, address),
       availLine
     ),
     el('div', { class: 'card' },
       el('div', { class: 'field rel' },
-        el('span', { class: 'label' }, 'Destination'),
+        el('span', { class: 'label' }, t('label_destination')),
         destInput,
         suggest,
         destError),
@@ -1224,21 +1241,21 @@ function renderSend() {
         el('button', {
           id: 'manage-book-btn', class: 'link-btn',
           onclick: () => renderAddressBook({ onBack: renderSend }),
-        }, '⌂ Manage address book'))
+        }, t('settings_manage_book')))
     ),
     el('div', { class: 'card' },
       el('div', { class: 'send-row' },
         el('div', { class: 'field', style: 'flex:1' },
-          el('span', { class: 'label' }, 'Amount (KRX)'),
+          el('span', { class: 'label' }, t('label_amount_krx')),
           el('div', { class: 'amount-row' }, amountInput, maxBtn)),
         el('div', { class: 'field', style: 'width:110px' },
-          el('span', { class: 'label' }, 'Fee (KRX)'),
+          el('span', { class: 'label' }, t('label_fee_krx')),
           feeInput)),
       feeError
     ),
     statusBox,
     submit,
-    el('p', { class: 'hint' }, 'UTXOs are fetched only when you send. Minimum fee: 0.3 KRX.')
+    el('p', { class: 'hint' }, t('send_footer'))
   );
 
   loadAvailable();
@@ -1251,19 +1268,19 @@ function renderSend() {
 function renderLocked() {
   const password = el('input', { id: 'unlock-pw', type: 'password', placeholder: '••••••••' });
   const errorBox = el('div', { class: 'error-box', style: 'display:none' });
-  const submit = el('button', { id: 'unlock-btn', class: 'btn' }, 'Unlock →');
+  const submit = el('button', { id: 'unlock-btn', class: 'btn' }, t('unlock_submit'));
 
   async function unlock() {
     if (!password.value || submit.disabled) return;
     submit.setAttribute('disabled', '');
-    submit.textContent = 'Decrypting…';
+    submit.textContent = t('status_decrypting');
     errorBox.style.display = 'none';
     const res = await unlockVault(password.value);
     if (!res) {
-      errorBox.textContent = 'Wrong password.';
+      errorBox.textContent = t('err_wrong_password_dot');
       errorBox.style.display = '';
       submit.removeAttribute('disabled');
-      submit.textContent = 'Unlock →';
+      submit.textContent = t('unlock_submit');
       return;
     }
     state.store = res.store;
@@ -1283,11 +1300,11 @@ function renderLocked() {
   show(
     el('div', { style: 'margin-top:36px' },
       el('div', { class: 'lock-icon', html: LOCK_SVG }),
-      el('h1', { class: 'glow', style: 'font-size:16px' }, 'WALLET LOCKED'),
-      el('p', { class: 'subtitle' }, 'Enter your password to continue.')
+      el('h1', { class: 'glow', style: 'font-size:16px' }, t('locked_title')),
+      el('p', { class: 'subtitle' }, t('locked_subtitle'))
     ),
     el('div', { class: 'card stack' },
-      el('div', { class: 'field' }, el('span', { class: 'label' }, 'Password'), password),
+      el('div', { class: 'field' }, el('span', { class: 'label' }, t('label_password')), password),
       errorBox,
       submit
     ),
@@ -1296,10 +1313,10 @@ function renderLocked() {
       class: 'link-btn center',
       style: 'opacity:.5;width:100%',
       onclick: async () => {
-        if (!window.confirm('Remove ALL accounts and the encrypted vault from this browser? Make sure every seed phrase is backed up.')) return;
+        if (!window.confirm(t('locked_reset_confirm'))) return;
         await resetWallet();
       },
-    }, 'Use a different wallet (clear all data)')
+    }, t('locked_use_different'))
   );
   setTimeout(() => password.focus(), 50);
 }
@@ -1308,16 +1325,16 @@ function renderDashboard() {
   const acct = activeAccount();
   const { address } = state.wallet;
 
-  const balanceBody = el('div', { class: 'loading' }, 'Loading…');
+  const balanceBody = el('div', { class: 'loading' }, t('common_loading'));
   const netRow = el('div', { class: 'net-row', style: 'display:none' });
   const txCard = el('div', { class: 'card', style: 'display:none' });
 
   // API reachability indicator, refreshed with every overview poll
   const statusDot = el('span', { id: 'api-status', class: 'status-dot' });
-  const statusText = el('span', { id: 'api-status-text' }, 'checking…');
+  const statusText = el('span', { id: 'api-status-text' }, t('status_checking'));
   const setStatus = (online) => {
     statusDot.className = `status-dot ${online ? 'online' : 'offline'}`;
-    statusText.textContent = online ? 'online' : 'offline';
+    statusText.textContent = online ? t('status_online') : t('status_offline');
   };
 
   async function loadOverview() {
@@ -1341,7 +1358,7 @@ function renderDashboard() {
       if (utxo && typeof utxo.count === 'number') {
         parts.push(
           el('div', { class: `balance-meta${utxo.count >= 80 ? ' warn' : ''}` },
-            `${utxo.count.toLocaleString('en-US')} UTXOs${utxo.count >= 80 ? ' — consolidation recommended' : ''}`)
+            t('utxos_count', utxo.count.toLocaleString('en-US')) + (utxo.count >= 80 ? t('consolidation_recommended') : ''))
         );
       }
       setStatus(true);
@@ -1350,7 +1367,7 @@ function renderDashboard() {
       if (info) {
         netRow.replaceChildren(
           el('span', {}, info.network ?? 'keryx-mainnet'),
-          el('span', {}, `DAA ${Number(info.last_daa_score ?? 0).toLocaleString('en-US')}`)
+          el('span', {}, t('dash_daa', Number(info.last_daa_score ?? 0).toLocaleString('en-US')))
         );
         netRow.style.display = '';
       }
@@ -1374,15 +1391,15 @@ function renderDashboard() {
       }
       const children = [
         el('div', { class: 'tx-head' },
-          el('span', { class: 'label', style: 'margin:0' }, 'Recent transactions'),
-          el('span', { class: 'tx-count' }, `${total.toLocaleString('en-US')} txs`)),
+          el('span', { class: 'label', style: 'margin:0' }, t('dash_recent_tx')),
+          el('span', { class: 'tx-count' }, t('txs_count', total.toLocaleString('en-US')))),
         el('div', { class: 'tx-list' }, txs.map(txRow)),
       ];
       if (total > 3) {
         children.push(el('button', {
           id: 'history-btn', class: 'link-btn', style: 'margin-top:8px',
           onclick: renderHistory,
-        }, `View all (${total.toLocaleString('en-US')}) →`));
+        }, t('dash_view_all', total.toLocaleString('en-US'))));
       }
       txCard.replaceChildren(...children);
       txCard.style.display = '';
@@ -1392,7 +1409,7 @@ function renderDashboard() {
   }
 
   // account switcher with inline rename
-  const accountSelect = el('select', { id: 'account-select', class: 'account-select', title: 'Switch account' });
+  const accountSelect = el('select', { id: 'account-select', class: 'account-select', title: t('title_switch_account') });
   for (const a of state.store.accounts) {
     const opt = el('option', { value: a.id }, `${a.label} (…${accountAddress(a).slice(-6)})`);
     if (a.id === acct.id) opt.setAttribute('selected', '');
@@ -1407,12 +1424,12 @@ function renderDashboard() {
   const renderSwitchMode = () => {
     accountRow.replaceChildren(
       accountSelect,
-      el('button', { id: 'rename-btn', class: 'btn-small', title: 'Rename account', onclick: renderEditMode }, '✎'),
-      el('button', { id: 'add-account-btn', class: 'btn-small', title: 'Add account', onclick: renderAddAccount }, '＋ Add')
+      el('button', { id: 'rename-btn', class: 'btn-small', title: t('title_rename_account'), onclick: renderEditMode }, '✎'),
+      el('button', { id: 'add-account-btn', class: 'btn-small', title: t('title_add_account'), onclick: renderAddAccount }, t('dash_add'))
     );
   };
   function renderEditMode() {
-    const nameInput = el('input', { id: 'rename-input', type: 'text', value: acct.label, maxlength: '24', title: 'Account name' });
+    const nameInput = el('input', { id: 'rename-input', type: 'text', value: acct.label, maxlength: '24', title: t('title_account_name') });
     const save = async () => {
       const label = nameInput.value.trim();
       if (label && label !== acct.label) {
@@ -1427,20 +1444,20 @@ function renderDashboard() {
     });
     accountRow.replaceChildren(
       nameInput,
-      el('button', { id: 'rename-save-btn', class: 'btn-small', title: 'Save name', onclick: save }, '✓'),
-      el('button', { id: 'rename-cancel-btn', class: 'btn-small', title: 'Cancel', onclick: renderSwitchMode }, '✕')
+      el('button', { id: 'rename-save-btn', class: 'btn-small', title: t('title_save_name'), onclick: save }, '✓'),
+      el('button', { id: 'rename-cancel-btn', class: 'btn-small', title: t('title_cancel'), onclick: renderSwitchMode }, '✕')
     );
     nameInput.focus();
     nameInput.select();
   }
   renderSwitchMode();
 
-  const refreshBtn = el('button', { id: 'refresh-btn', class: 'btn-small', title: 'Refresh', onclick: () => { loadOverview(); loadTxs(); } }, '↺');
+  const refreshBtn = el('button', { id: 'refresh-btn', class: 'btn-small', title: t('title_refresh'), onclick: () => { loadOverview(); loadTxs(); } }, '↺');
 
   show(
     el('div', { class: 'topbar' },
       el('div', {},
-        el('h2', { class: 'glow' }, 'KERYX WALLET'),
+        el('h2', { class: 'glow' }, t('home_title')),
         el('div', { class: 'status-row' },
           statusDot, statusText,
           el('span', { class: 'status-sep' }, '·'),
@@ -1449,28 +1466,28 @@ function renderDashboard() {
         el('button', {
           id: 'lock-btn',
           class: 'btn-small icon',
-          title: 'Lock wallet (keeps encrypted vault)',
+          title: t('title_lock'),
           html: LOCK_ICON,
           onclick: async () => { await endSession(); state.wallet = null; renderLocked(); },
         }),
-        el('button', { id: 'settings-btn', class: 'btn-small', title: 'Settings', onclick: renderSettings }, '⚙'))),
+        el('button', { id: 'settings-btn', class: 'btn-small', title: t('title_settings'), onclick: renderSettings }, '⚙'))),
     accountRow,
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, `${acct.label} — KRX address`),
+      el('span', { class: 'label' }, t('dash_krx_address', acct.label)),
       el('div', { class: 'addr-row' },
         el('div', { id: 'address', class: 'addr' }, address),
         copyButton(() => address, '⧉', '✓', 'copy-address-btn'),
         refreshBtn)),
     el('div', { class: 'card' },
-      el('span', { class: 'label' }, 'Balance'),
+      el('span', { class: 'label' }, t('label_balance')),
       balanceBody,
       netRow),
     el('div', { class: 'actions-row' },
-      el('button', { id: 'send-btn', class: 'btn', onclick: renderSend }, 'Send KRX →'),
-      el('button', { id: 'inference-btn', class: 'btn ghost', onclick: renderInference }, 'AI Inference →')),
+      el('button', { id: 'send-btn', class: 'btn', onclick: renderSend }, t('dash_send')),
+      el('button', { id: 'inference-btn', class: 'btn ghost', onclick: renderInference }, t('dash_inference'))),
     txCard,
     el('p', { class: 'hint', style: 'margin-top:2px' },
-      'Consolidate — coming in the next release.')
+      t('dash_consolidate'))
   );
 
   loadOverview();
@@ -1494,7 +1511,7 @@ for (const evt of ['mousedown', 'keydown']) {
 // --- init ----------------------------------------------------------------------
 
 (async function init() {
-  await loadApiBase(); // resolve the configured API host before anything renders
+  await Promise.all([loadApiBase(), loadLocale()]); // resolve API host + UI language before rendering
   if (!(await vaultExists())) {
     renderHome();
     return;
