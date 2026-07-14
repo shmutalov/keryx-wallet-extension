@@ -216,11 +216,21 @@ const bgSession = {};
     bgSession.krx_pending?.[reqId]?.origin === DAPP && bgSession.krx_pending[reqId].winId === windowsCreated[0].id);
 
   await dispatch({ type: 'krx-approval-result', id: reqId, result: [wallet.address] }, extensionSender);
-  check('approval result forwarded to the requesting tab',
-    tabMessages.some((t) => t.tabId === 7 && t.msg.type === 'krx-response' && t.msg.id === reqId && t.msg.result?.[0] === wallet.address));
+  // The forwarded response must carry the PAGE's request id ('x'), not the
+  // internal pending uuid (reqId) — otherwise inpage can't match its promise.
+  check('approval result routes back to the page request id (not the internal uuid)',
+    reqId !== 'x' &&
+    tabMessages.some((t) => t.tabId === 7 && t.msg.type === 'krx-response' && t.msg.id === 'x' && t.msg.result?.[0] === wallet.address));
   check('connect emits accountsChanged to all tabs (origin-tagged)',
     tabMessages.some((t) => t.msg.type === 'krx-event' && t.msg.event === 'accountsChanged' && t.msg.origin === DAPP));
   check('pending request cleared after approval', !bgSession.krx_pending?.[reqId]);
+
+  // Reject BUTTON (krx-approval-result carrying an error) must also route the
+  // error back to the page id, or the dApp's promise hangs (the bug this fixes).
+  const pendRej = await rpc('krx_requestAccounts');
+  await dispatch({ type: 'krx-approval-result', id: pendRej.id, error: 'User rejected the request' }, extensionSender);
+  check('reject routes an error back to the page request id',
+    tabMessages.some((t) => t.tabId === 7 && t.msg.type === 'krx-response' && t.msg.id === 'x' && /rejected/.test(t.msg.error ?? '')));
 
   // a request from a page cannot spoof an approval result
   const before = tabMessages.length;
@@ -256,7 +266,7 @@ const bgSession = {};
   for (const l of windowRemovedListeners) await l(win2.id);
   await until(() => tabMessages.some((t) => t.tabId === 9 && /rejected/.test(t.msg.error ?? '')), 20, 50);
   check('closing the approval window rejects the request',
-    pend2.pending === true && tabMessages.some((t) => t.tabId === 9 && t.msg.id === pend2.id && /rejected/.test(t.msg.error ?? '')));
+    pend2.pending === true && tabMessages.some((t) => t.tabId === 9 && t.msg.id === 'y' && /rejected/.test(t.msg.error ?? '')));
 
   await rpc('krx_disconnect');
   check('disconnect removes the connection and emits disconnect',

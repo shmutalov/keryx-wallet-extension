@@ -137,6 +137,10 @@ async function handleRequest(msg, sender) {
   const id = crypto.randomUUID();
   const req = {
     id,
+    // The page keyed its pending promise by its own request id; keep it so the
+    // eventual krx-response routes back to it. The internal `id` (uuid) stays
+    // page-independent so it can't be used to target another tab's request.
+    pageId: msg.id,
     origin,
     tabId: sender.tab.id,
     method: msg.method,
@@ -170,7 +174,8 @@ async function finishApproval({ id, result, error }) {
 }
 
 function respond(req, result, error) {
-  chrome.tabs.sendMessage(req.tabId, { type: 'krx-response', id: req.id, result, error }).catch(() => {});
+  // Route by the page's request id (uuid fallback for older pending records).
+  chrome.tabs.sendMessage(req.tabId, { type: 'krx-response', id: req.pageId ?? req.id, result, error }).catch(() => {});
 }
 
 // approval window closed without answering -> user rejected
