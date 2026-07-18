@@ -81,8 +81,15 @@ async function handleRequest(msg, sender) {
   switch (msg.method) {
     case 'krx_getAccounts':
       return { result: conn ? [conn.address] : [] };
-    case 'krx_getNetwork':
-      return { result: 'keryx-mainnet' };
+    case 'krx_getNetwork': {
+      // Report the network of whatever node krx_api_base points at — never a
+      // guess. A dApp uses this to check the chain matches before it locks
+      // funds, so a confidently wrong answer is worse than an error: defaulting
+      // to 'keryx-mainnet' here is what made a testnet wallet look like mainnet.
+      const { network } = await api.info();
+      if (typeof network !== 'string' || !network) throw new Error('Node reported no network');
+      return { result: network };
+    }
     case 'krx_getVersion':
       return { result: chrome.runtime.getManifest().version };
     case 'krx_getPublicKey':

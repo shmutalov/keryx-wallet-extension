@@ -417,6 +417,15 @@ function renderSettings() {
     el('div', { class: 'settings-row' }, el('span', {}, k), el('span', {}, v));
   const version = (globalThis.chrome?.runtime?.getManifest?.() ?? {}).version ?? 'dev';
 
+  // Ask the configured node which network it is, rather than printing a fixed
+  // 'keryx-mainnet' — this row sits directly under the API-host field, so a
+  // hardcoded answer contradicts the host the user just pointed us at.
+  const netValue = el('span', {}, t('common_loading'));
+  api.info().then(
+    (info) => { netValue.textContent = info?.network || '—'; },
+    () => { netValue.textContent = '—'; }
+  );
+
   // dApp connections (origins granted through the provider's approval flow)
   const sitesBox = el('div', { id: 'connected-sites', class: 'stack' },
     el('span', { class: 'hint' }, t('common_loading')));
@@ -508,7 +517,7 @@ function renderSettings() {
       el('span', { class: 'label' }, t('settings_session')),
       infoRow(t('settings_autolock_label'), t('settings_autolock_value')),
       infoRow(t('settings_accounts'), String(state.store.accounts.length)),
-      infoRow(t('settings_network'), 'keryx-mainnet'),
+      el('div', { class: 'settings-row' }, el('span', {}, t('settings_network')), netValue),
       infoRow(t('settings_version'), version)
     ),
     el('div', { class: 'card' },
@@ -1366,7 +1375,7 @@ function renderDashboard() {
       balanceBody.className = '';
       if (info) {
         netRow.replaceChildren(
-          el('span', {}, info.network ?? 'keryx-mainnet'),
+          el('span', {}, info.network ?? '—'),
           el('span', {}, t('dash_daa', Number(info.last_daa_score ?? 0).toLocaleString('en-US')))
         );
         netRow.style.display = '';

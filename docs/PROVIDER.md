@@ -25,7 +25,7 @@ return promises; a user rejection rejects with `Error('User rejected the request
 | `getPublicKey()` | `Promise<string>` | 32-byte **x-only** public key (hex) of the connected account — what P2PK scripts and HTLC redeem scripts are built from. |
 | `getBalance()` | `Promise<{address, balance_sompi}>` | |
 | `getUtxos()` | `Promise<UtxoEntry[]>` | `{ transaction_id, index, amount_sompi, script_version, script_public_key, block_daa_score, is_coinbase }` |
-| `getNetwork()` | `Promise<string>` | `"keryx-mainnet"` |
+| `getNetwork()` | `Promise<string>` | Network reported by the API host in use — `"keryx-mainnet"` on the default host, `"keryx-simnet"` etc. against a custom one (Settings → Network). Read live from the node, never assumed: **rejects** if the host is unreachable or reports no network rather than falling back to a default, since a confidently wrong network is worse than an error. Check it before acting on funds. |
 | `getVersion()` | `Promise<string>` | extension version |
 | `disconnect()` | `Promise<true>` | revokes this origin's grant |
 
