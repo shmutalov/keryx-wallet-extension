@@ -183,6 +183,7 @@ const bgSession = {};
     if (u.endsWith('/broadcast')) return new Response(JSON.stringify({ transaction_id: 'bcast-1' }), { status: 200 });
     if (u.endsWith('/spend')) return new Response(JSON.stringify({ status: 'accepted', transaction: { tx_id: 'spender-1', inputs: [{ signature_script: 'preimagepush' }] } }), { status: 200 });
     if (u.includes('/transactions/')) return new Response(JSON.stringify({ tx_id: 'tx-1', inputs: [], outputs: [], payload: 'deadbeef' }), { status: 200 });
+    if (u.endsWith('/info')) return new Response(JSON.stringify({ network: 'keryx-testnet-11', last_daa_score: 1000 }), { status: 200 });
     throw new Error(`unexpected fetch ${u}`);
   };
   new Function(bundle('background.js'))();
@@ -200,7 +201,8 @@ const bgSession = {};
   const rpc = (method, params) => dispatch({ type: 'krx-request', id: 'x', method, params }, contentSender);
 
   check('getAccounts before connect -> []', (await rpc('krx_getAccounts')).result?.length === 0);
-  check('getNetwork', (await rpc('krx_getNetwork')).result === 'keryx-mainnet');
+  check('getNetwork reports the node network (not a hardcoded literal)',
+    (await rpc('krx_getNetwork')).result === 'keryx-testnet-11');
   check('getVersion from manifest', (await rpc('krx_getVersion')).result === '9.9.9-test');
   check('getPublicKey before connect -> not-connected error',
     /requestAccounts/.test((await rpc('krx_getPublicKey')).error ?? ''));
