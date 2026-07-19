@@ -179,11 +179,11 @@ UI blocks submission when `miner_count === 0` for the chosen model.
 
 | key | model_id_hex | base |
 |---|---|---|
-| qwen3-1.7b | 4f21ddeb7d62bd2265bc54230d536ca3f1749927780f528c3c41fa2911df4d72 | 0.3 |
-| gemma-3-4b | ad50ad0bd461d8ab44efc0214989eb33291685ef4ade22a0f4f217d03266d837 | 0.5 |
-| dolphin-llama3-8b | 9421066a6400c98ba137114f7f4b7d4a2ddf13ab163a5de38c0184793af6313a | 1.5 |
-| qwen3-32b-abliterated | 65c6eb6fe18b9efd8060ab9d2d03bb9b01050a3b1378cbac000c5cc0acdc0d2a | 2.5 |
-| llama-3.3-70b-q2 | 6df46a78cbe4dc579f04dbd801f1a520b9eae28ce7b50c8da7874bfa3fb5108d | 4.0 |
+| exaone-4.0-1.2b | 300a99b3a85b0ab45d1d930bb7b1d4b0f35983d521e79ff21193a6908dc4b810 | 0.5 |
+| mistral-7b-v0.3 | 8c2fea600f0eefe7048741a5119cb7be303037f59fc026e48382658f23581e0a | 1.0 |
+| glm-4-9b-0414 | fa2f13be0850e26c5ce86c7ac79da85e300c1da8b3290f9a18d47105f1f2140a | 1.5 |
+| qwen3.6-27b | b8bdc01fa407eab943e4fefc807483b39f8142785256049e1f559698a5284746 | 2.5 |
+| kimi-linear-48b | 3dc09358ad75c6ef0c9c86ee4f47c4d6acda961fecbd0e4f9cf55e8f0fdffddb | 4.0 |
 
 **Coin selection** (advanced builder): largest-first; select until
 `change > 0 && 1e12/change + (escrow ? 1e12/escrow : 0) ≤ 8e4`; insufficient if

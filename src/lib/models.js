@@ -1,42 +1,45 @@
-// Inference model registry — mirrors the official wallet's hardcoded list
-// (model ids and base prices from keryx-labs.com/infer). Live miner counts
-// come from GET /api/v1/capabilities at runtime.
+// Inference model registry — the H4 lineup. Mirrors keryx-node's
+// `consensus/core/src/config/params.rs` (model ids = CIDv0[2..34] of each pinned
+// GGUF; base prices = INFERENCE_REWARD_MINIMUMS_V2_H4) and keryx-miner's
+// `src/models.rs`. Keep this in lockstep with those; the shim resolves unknown
+// ids to raw hex, and capabilities/feed fall back to id-hex matching. Live miner
+// counts come from GET /api/v1/capabilities at runtime.
 
 export const INFERENCE_MODELS = [
   {
-    key: 'qwen3-1.7b',
-    label: 'Qwen3-1.7B · uncensored · 1.7B params (Q4)',
-    name: 'Qwen3-1.7B (uncensored)',
-    idHex: '4f21ddeb7d62bd2265bc54230d536ca3f1749927780f528c3c41fa2911df4d72',
-    baseSompi: 30000000, // 0.3 KRX
+    key: 'exaone-4.0-1.2b',
+    label: 'EXAONE-4.0-1.2B · uncensored · 1.2B (Q4_K_M)',
+    name: 'EXAONE-4.0-1.2B (uncensored)',
+    idHex: '300a99b3a85b0ab45d1d930bb7b1d4b0f35983d521e79ff21193a6908dc4b810',
+    baseSompi: 50000000, // 0.5 KRX  (--very-light)
   },
   {
-    key: 'gemma-3-4b',
-    label: 'Gemma-3-4B · uncensored · 4B params (Q4)',
-    name: 'Gemma-3-4B (uncensored)',
-    idHex: 'ad50ad0bd461d8ab44efc0214989eb33291685ef4ade22a0f4f217d03266d837',
-    baseSompi: 50000000, // 0.5 KRX
+    key: 'mistral-7b-v0.3',
+    label: 'Mistral-7B-v0.3 · uncensored · 7B (Q6_K)',
+    name: 'Mistral-7B-v0.3 (uncensored)',
+    idHex: '8c2fea600f0eefe7048741a5119cb7be303037f59fc026e48382658f23581e0a',
+    baseSompi: 100000000, // 1.0 KRX  (--light)
   },
   {
-    key: 'dolphin-llama3-8b',
-    label: 'Dolphin-3.0-8B · uncensored · 8B params (Q4)',
-    name: 'Dolphin-3.0-8B (uncensored)',
-    idHex: '9421066a6400c98ba137114f7f4b7d4a2ddf13ab163a5de38c0184793af6313a',
-    baseSompi: 150000000, // 1.5 KRX
+    key: 'glm-4-9b-0414',
+    label: 'GLM-4-9B-0414 · uncensored · 9B (Q6_K)',
+    name: 'GLM-4-9B-0414 (uncensored)',
+    idHex: 'fa2f13be0850e26c5ce86c7ac79da85e300c1da8b3290f9a18d47105f1f2140a',
+    baseSompi: 150000000, // 1.5 KRX  (default)
   },
   {
-    key: 'qwen3-32b-abliterated',
-    label: 'Qwen3-32B · uncensored · 32B params (Q4)',
-    name: 'Qwen3-32B (uncensored)',
-    idHex: '65c6eb6fe18b9efd8060ab9d2d03bb9b01050a3b1378cbac000c5cc0acdc0d2a',
-    baseSompi: 250000000, // 2.5 KRX
+    key: 'qwen3.6-27b',
+    label: 'Qwen3.6-27B · uncensored · 27B (Q4_K_M)',
+    name: 'Qwen3.6-27B (uncensored)',
+    idHex: 'b8bdc01fa407eab943e4fefc807483b39f8142785256049e1f559698a5284746',
+    baseSompi: 250000000, // 2.5 KRX  (--high)
   },
   {
-    key: 'llama-3.3-70b-q2',
-    label: 'LLaMA-3.3-70B · uncensored · 70B params (Q2)',
-    name: 'LLaMA-3.3-70B Q2 (uncensored)',
-    idHex: '6df46a78cbe4dc579f04dbd801f1a520b9eae28ce7b50c8da7874bfa3fb5108d',
-    baseSompi: 400000000, // 4.0 KRX
+    key: 'kimi-linear-48b',
+    label: 'Kimi-Linear-48B · uncensored · 48B-A3B MoE (Q4_K_M)',
+    name: 'Kimi-Linear-48B (uncensored)',
+    idHex: '3dc09358ad75c6ef0c9c86ee4f47c4d6acda961fecbd0e4f9cf55e8f0fdffddb',
+    baseSompi: 400000000, // 4.0 KRX  (--very-high)
   },
 ];
 

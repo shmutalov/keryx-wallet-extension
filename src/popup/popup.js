@@ -576,7 +576,7 @@ function renderInference() {
   for (const m of INFERENCE_MODELS) {
     const opt = el('option', { value: m.key },
       `${m.label} · ${t('inf_from_price', formatKRX(m.baseSompi))}`);
-    if (m.key === 'gemma-3-4b') opt.setAttribute('selected', '');
+    if (m.key === 'glm-4-9b-0414') opt.setAttribute('selected', '');
     modelSelect.append(opt);
   }
   const minersLine = el('div', { id: 'inf-miners', class: 'balance-meta' }, '');

@@ -74,16 +74,16 @@ const MOCK_TXS = Array.from({ length: 20 }, (_, i) => ({
   amount_sompi: (i + 1) * 10000000,
   is_spend: i % 3 === 0,
 }));
-const GEMMA_ID = 'ad50ad0bd461d8ab44efc0214989eb33291685ef4ade22a0f4f217d03266d837';
+const DEFAULT_MODEL_ID = 'fa2f13be0850e26c5ce86c7ac79da85e300c1da8b3290f9a18d47105f1f2140a'; // glm-4-9b-0414
 const MINER_PUB = '22'.repeat(32);
 const MOCK_CAPABILITIES = [
-  { model: 'gemma-3-4b', model_id_hex: GEMMA_ID, miner_count: 3, miner_pubkeys: [MINER_PUB] },
+  { model: 'glm-4-9b-0414', model_id_hex: DEFAULT_MODEL_ID, miner_count: 3, miner_pubkeys: [MINER_PUB] },
 ];
 const MOCK_INFERENCES = [
-  { tx_id: 'cd'.repeat(32), model: 'gemma-3-4b', prompt: 'Answered question', max_tokens: 128,
+  { tx_id: 'cd'.repeat(32), model: 'glm-4-9b-0414', prompt: 'Answered question', max_tokens: 128,
     inference_reward: 60000000, priority_fee: 30000000, daa_score: 100, block_hash: 'ef'.repeat(32),
     payload_prefix: 'aa11'.repeat(4), result_text: 'The answer is 42.', result: 'raw' },
-  { tx_id: 'ce'.repeat(32), model: 'gemma-3-4b', prompt: 'Pending question', max_tokens: 128,
+  { tx_id: 'ce'.repeat(32), model: 'glm-4-9b-0414', prompt: 'Pending question', max_tokens: 128,
     inference_reward: 60000000, priority_fee: 30000000, daa_score: 101, block_hash: 'ef'.repeat(32),
     payload_prefix: 'bb22'.repeat(4), result: null },
 ];
@@ -278,26 +278,26 @@ mockBalance = true;
 byId('inference-btn').click();
 await sleep(100);
 check('15l', 'inference page opens', !!byId('inf-model') && !!byId('inf-submit') && !!byId('inf-prompt'));
-check('15m', 'model picker lists 5 models, gemma default',
-  byId('inf-model').querySelectorAll('option').length === 5 && byId('inf-model').value === 'gemma-3-4b');
+check('15m', 'model picker lists 5 models, glm-4-9b default',
+  byId('inf-model').querySelectorAll('option').length === 5 && byId('inf-model').value === 'glm-4-9b-0414');
 await until(() => byId('inf-miners')?.textContent.includes('3 active miners'), 20);
 check('15n', 'live miner count shown from capabilities', byId('inf-miners').textContent.includes('3 active miners'));
 await until(() => app().textContent.includes('Balance: 100 KRX'), 20);
 byId('inf-prompt').value = 'What is Keryx?';
 fire(byId('inf-prompt'), 'input');
 await sleep(50);
-check('15o', 'cost estimate: 0.5 base + 0.2 tokens + 0.3 fee = 1 KRX',
-  byId('inf-total').textContent.includes('Total: 1 KRX'));
+check('15o', 'cost estimate: 1.5 base + 0.2 tokens + 0.3 fee = 2 KRX',
+  byId('inf-total').textContent.includes('Total: 2 KRX'));
 check('15p', 'submit enabled with prompt + funds + miners', !byId('inf-submit').disabled);
 broadcastBody = null;
 byId('inf-submit').click();
 await until(() => byId('inf-status')?.className === 'success-box', 30);
 check('15q', 'AiRequest submitted, tx id shown', byId('inf-status').textContent.includes('e2e0'));
 const promptHex = Buffer.from('What is Keryx?', 'utf8').toString('hex');
-const escrowOut = broadcastBody?.outputs?.find((o) => o.amount === 70000000);
+const escrowOut = broadcastBody?.outputs?.find((o) => o.amount === 170000000); // glm 1.5 base + 0.2 tokens
 check('15r', 'broadcast: inference subnetwork, model-id payload with prompt, CSV escrow to miner',
   broadcastBody?.subnetwork_id === '03' + '0'.repeat(38) &&
-  broadcastBody?.payload?.startsWith(GEMMA_ID) &&
+  broadcastBody?.payload?.startsWith(DEFAULT_MODEL_ID) &&
   broadcastBody?.payload?.endsWith(promptHex) &&
   escrowOut?.script_public_key === `02a08cb120${MINER_PUB}ac`);
 await until(() => byId('inf-feed')?.querySelectorAll('.inf-item').length === 2, 20);

@@ -52,7 +52,7 @@ x-only key from `getPublicKey()`.
 
 ```js
 const txid = await window.keryx.submitInference({
-  model: 'gemma-3-4b',        // registry key
+  model: 'glm-4-9b-0414',     // registry key
   prompt: 'What is Keryx?',
   maxTokens: 256,             // 1..4096, reward surcharge per 64
   priorityFeeSompi: 30000000, // optional, floored at 0.3 KRX
