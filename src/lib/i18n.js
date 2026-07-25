@@ -12,8 +12,10 @@
 
 import enMessages from '../../_locales/en/messages.json';
 
-export const SUPPORTED_LOCALES = ['en', 'pt_BR', 'ru'];
-export const LOCALE_LABELS = { en: 'English', pt_BR: 'Português (Brasil)', ru: 'Русский' };
+export const SUPPORTED_LOCALES = ['en', 'es', 'pt_BR', 'ru'];
+export const LOCALE_LABELS = {
+  en: 'English', es: 'Español', pt_BR: 'Português (Brasil)', ru: 'Русский',
+};
 const LOCALE_KEY = 'krx_locale';
 
 // Chrome's messages.json is { key: { message, … } }; flatten to { key: message }.
@@ -24,9 +26,11 @@ let active = 'en';
 let table = EN; // active-locale flat table; per-key fallback to EN in t()
 let loaded = false;
 
-/** Map a browser UI language ('pt-BR', 'ru-RU', 'en-US', …) to a supported locale, or null. */
+/** Map a browser UI language ('pt-BR', 'es-CR', 'ru-RU', 'en-US', …) to a supported locale, or null. */
 export function normalizeLocale(lang) {
   const l = (lang ?? '').toLowerCase();
+  // Every Spanish variant (es-ES, es-419, es-CR, es-MX, …) maps to the one neutral es table.
+  if (l.startsWith('es')) return 'es';
   if (l.startsWith('pt')) return 'pt_BR';
   if (l.startsWith('ru')) return 'ru';
   if (l.startsWith('en')) return 'en';

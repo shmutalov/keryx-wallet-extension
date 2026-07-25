@@ -7,7 +7,7 @@
 // label/icon copy can change freely. Checks that need live data from the
 // Keryx API are SKIPPED with a warning when the node is unreachable.
 import { JSDOM } from 'jsdom';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 
 const dom = new JSDOM('<!DOCTYPE html><html><body><div id="app"></div></body></html>', {
   url: 'chrome-extension://test/popup.html',
@@ -342,6 +342,21 @@ check(24, 'no Reset on dashboard, settings button instead', !byId('reset-btn') &
 byId('settings-btn').click();
 await sleep(50);
 check(25, 'settings page opens', app().textContent.includes('Danger zone') && !!byId('reset-btn'));
+
+// --- i18n: the picker and the bundled locale files must agree, both ways ---
+const localeDirs = readdirSync(new URL('../_locales', import.meta.url)).sort();
+const langOpts = [...byId('lang-select').options].map((o) => o.value);
+check('25j', 'language picker offers auto + exactly the bundled locales',
+  langOpts[0] === 'auto' && JSON.stringify(langOpts.slice(1).sort()) === JSON.stringify(localeDirs));
+const enMsgs = JSON.parse(readFileSync(new URL('../_locales/en/messages.json', import.meta.url), 'utf8'));
+const phSet = (s) => [...new Set(s.match(/\$\d/g) ?? [])].sort().join('');
+const incomplete = localeDirs.filter((loc) => {
+  const m = JSON.parse(readFileSync(new URL(`../_locales/${loc}/messages.json`, import.meta.url), 'utf8'));
+  return Object.keys(enMsgs).some(
+    (k) => !m[k]?.message?.trim() || phSet(enMsgs[k].message) !== phSet(m[k].message));
+});
+check('25k', 'every locale is complete: all keys present, $n placeholders match en',
+  incomplete.length === 0, incomplete.join(', '));
 
 // --- seed backup requires re-entering the password ---
 byId('settings-backup-btn').click();
