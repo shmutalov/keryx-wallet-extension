@@ -280,6 +280,8 @@ await sleep(100);
 check('15l', 'inference page opens', !!byId('inf-model') && !!byId('inf-submit') && !!byId('inf-prompt'));
 check('15m', 'model picker lists 5 models, glm-4-9b default',
   byId('inf-model').querySelectorAll('option').length === 5 && byId('inf-model').value === 'glm-4-9b-0414');
+check('15m2', 'retired H4 tier-0 (exaone) not offered',
+  ![...byId('inf-model').querySelectorAll('option')].some((o) => o.value === 'exaone-4.0-1.2b'));
 await until(() => byId('inf-miners')?.textContent.includes('3 active miners'), 20);
 check('15n', 'live miner count shown from capabilities', byId('inf-miners').textContent.includes('3 active miners'));
 await until(() => app().textContent.includes('Balance: 100 KRX'), 20);

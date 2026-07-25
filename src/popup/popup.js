@@ -20,7 +20,7 @@ import {
   buildInferencePayload,
   MIN_FEE_SOMPI,
 } from '../lib/tx.js';
-import { INFERENCE_MODELS, getModel, getModelByIdHex, inferenceRewardSompi } from '../lib/models.js';
+import { SELECTABLE_MODELS, getModel, getModelByIdHex, inferenceRewardSompi } from '../lib/models.js';
 import {
   getAddressBook,
   addBookEntry,
@@ -573,7 +573,7 @@ function renderInference() {
 
   const availLine = el('div', { class: 'balance-meta' }, `${t('label_balance')}: …`);
   const modelSelect = el('select', { id: 'inf-model', class: 'account-select' });
-  for (const m of INFERENCE_MODELS) {
+  for (const m of SELECTABLE_MODELS) {
     const opt = el('option', { value: m.key },
       `${m.label} · ${t('inf_from_price', formatKRX(m.baseSompi))}`);
     if (m.key === 'glm-4-9b-0414') opt.setAttribute('selected', '');

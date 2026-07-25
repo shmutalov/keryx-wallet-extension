@@ -1,17 +1,31 @@
-// Inference model registry — the H4 lineup. Mirrors keryx-node's
+// Inference model registry — the H5 lineup. Mirrors keryx-node's
 // `consensus/core/src/config/params.rs` (model ids = CIDv0[2..34] of each pinned
 // GGUF; base prices = INFERENCE_REWARD_MINIMUMS_V2_H4) and keryx-miner's
 // `src/models.rs`. Keep this in lockstep with those; the shim resolves unknown
 // ids to raw hex, and capabilities/feed fall back to id-hex matching. Live miner
 // counts come from GET /api/v1/capabilities at runtime.
+//
+// H5 (`POM_TIERS_H5`) swaps ONLY tier 0: EXAONE-4.0-1.2B → Qwen3-8B-abliterated,
+// raising the tier-0 VRAM floor to ~6 GB; tiers 1-4 carry over from H4 unchanged.
+// The retired EXAONE entry stays listed (`retired: true`) so historical feed rows
+// still render by name — the picker filters it out, no miner serves it post-H5.
 
 export const INFERENCE_MODELS = [
   {
+    key: 'qwen3-8b-abliterated',
+    label: 'Qwen3-8B · uncensored · 8B (Q4_K_S)',
+    name: 'Qwen3-8B (uncensored)',
+    idHex: 'd42fa6ee00e07d49b046090a56af0e7bd61025937c502e2c574a72874c350d24',
+    baseSompi: 50000000, // 0.5 KRX  (--very-light)
+  },
+  {
+    // Retired at H5 (the pre-fork tier 0) — kept for historical AiRequest decode only.
     key: 'exaone-4.0-1.2b',
     label: 'EXAONE-4.0-1.2B · uncensored · 1.2B (Q4_K_M)',
     name: 'EXAONE-4.0-1.2B (uncensored)',
     idHex: '300a99b3a85b0ab45d1d930bb7b1d4b0f35983d521e79ff21193a6908dc4b810',
-    baseSompi: 50000000, // 0.5 KRX  (--very-light)
+    baseSompi: 50000000, // 0.5 KRX  (was --very-light)
+    retired: true,
   },
   {
     key: 'mistral-7b-v0.3',
@@ -42,6 +56,9 @@ export const INFERENCE_MODELS = [
     baseSompi: 400000000, // 4.0 KRX  (--very-high)
   },
 ];
+
+/** The models a new AiRequest may be sent to (the current lineup, retired ones dropped). */
+export const SELECTABLE_MODELS = INFERENCE_MODELS.filter((m) => !m.retired);
 
 export const TOKEN_SURCHARGE_PER_64 = 5000000; // 0.05 KRX per 64 max_tokens
 
