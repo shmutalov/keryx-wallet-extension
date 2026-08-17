@@ -12,9 +12,9 @@
 
 import enMessages from '../../_locales/en/messages.json';
 
-export const SUPPORTED_LOCALES = ['en', 'es', 'pt_BR', 'ru'];
+export const SUPPORTED_LOCALES = ['en', 'es', 'fr', 'pt_BR', 'ru'];
 export const LOCALE_LABELS = {
-  en: 'English', es: 'Español', pt_BR: 'Português (Brasil)', ru: 'Русский',
+  en: 'English', es: 'Español', fr: 'Français', pt_BR: 'Português (Brasil)', ru: 'Русский',
 };
 const LOCALE_KEY = 'krx_locale';
 
@@ -31,6 +31,8 @@ export function normalizeLocale(lang) {
   const l = (lang ?? '').toLowerCase();
   // Every Spanish variant (es-ES, es-419, es-CR, es-MX, …) maps to the one neutral es table.
   if (l.startsWith('es')) return 'es';
+  // Likewise every French variant (fr-FR, fr-CA, fr-BE, fr-CH, …) → the one fr table.
+  if (l.startsWith('fr')) return 'fr';
   if (l.startsWith('pt')) return 'pt_BR';
   if (l.startsWith('ru')) return 'ru';
   if (l.startsWith('en')) return 'en';
