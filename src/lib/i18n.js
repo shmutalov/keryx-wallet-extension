@@ -12,9 +12,10 @@
 
 import enMessages from '../../_locales/en/messages.json';
 
-export const SUPPORTED_LOCALES = ['en', 'es', 'fr', 'pt_BR', 'ru'];
+export const SUPPORTED_LOCALES = ['en', 'de', 'es', 'fr', 'pt_BR', 'ru', 'zh_CN'];
 export const LOCALE_LABELS = {
-  en: 'English', es: 'Español', fr: 'Français', pt_BR: 'Português (Brasil)', ru: 'Русский',
+  en: 'English', de: 'Deutsch', es: 'Español', fr: 'Français',
+  pt_BR: 'Português (Brasil)', ru: 'Русский', zh_CN: '中文（简体）',
 };
 const LOCALE_KEY = 'krx_locale';
 
@@ -33,6 +34,16 @@ export function normalizeLocale(lang) {
   if (l.startsWith('es')) return 'es';
   // Likewise every French variant (fr-FR, fr-CA, fr-BE, fr-CH, …) → the one fr table.
   if (l.startsWith('fr')) return 'fr';
+  if (l.startsWith('de')) return 'de';
+  // Only Simplified-Chinese variants (zh, zh-CN, zh-SG, zh-Hans-*) map to zh_CN.
+  // Traditional (zh-TW, zh-HK, zh-MO, zh-Hant-*) deliberately falls back to
+  // English until a zh_TW catalog exists — auto-serving Simplified would be
+  // wrong; users can still pick 中文（简体） manually in Settings.
+  if (l.startsWith('zh')) {
+    const traditional = l.includes('hant')
+      || l.startsWith('zh-tw') || l.startsWith('zh-hk') || l.startsWith('zh-mo');
+    return traditional ? null : 'zh_CN';
+  }
   if (l.startsWith('pt')) return 'pt_BR';
   if (l.startsWith('ru')) return 'ru';
   if (l.startsWith('en')) return 'en';
