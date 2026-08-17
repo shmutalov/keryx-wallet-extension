@@ -179,15 +179,19 @@ UI blocks submission when `miner_count === 0` for the chosen model.
 
 | key | model_id_hex | base |
 |---|---|---|
-| qwen3-8b-abliterated | d42fa6ee00e07d49b046090a56af0e7bd61025937c502e2c574a72874c350d24 | 0.5 |
-| mistral-7b-v0.3 | 8c2fea600f0eefe7048741a5119cb7be303037f59fc026e48382658f23581e0a | 1.0 |
+| qwen3.5-9b-abliterated | bd34568cd89f5f19c6c3a6e1a61b929bc868709409eaad8e672d85f3c1eb5710 | 1.0 |
 | glm-4-9b-0414 | fa2f13be0850e26c5ce86c7ac79da85e300c1da8b3290f9a18d47105f1f2140a | 1.5 |
+| gemma-4-12b-abliterated | 399984045600f7d58d1b2cf01e6a4bf466fa15c7ac31bd0dd1a71e003b617cc6 | 2.0 |
 | qwen3.6-27b | b8bdc01fa407eab943e4fefc807483b39f8142785256049e1f559698a5284746 | 2.5 |
 | kimi-linear-48b | 3dc09358ad75c6ef0c9c86ee4f47c4d6acda961fecbd0e4f9cf55e8f0fdffddb | 4.0 |
 
-The H5 hardfork (mainnet DAA 59,009,037) swapped tier 0 only — `exaone-4.0-1.2b`
-(`300a99b3…`) is retired and no longer offered in the picker, but stays in the
-registry so pre-fork feed rows still resolve to a name instead of raw hex.
+The H6 hardfork (`pom_v3_activation`, mainnet DAA 76,316,623) retired
+`qwen3-8b-abliterated` (`d42fa6ee…`, the H5 tier 0) and `mistral-7b-v0.3`
+(`8c2fea60…`), replacing both with `qwen3.5-9b-abliterated` as tier 0 and
+inserting `gemma-4-12b-abliterated` as the new tier 2 (and default); there is
+no sub-1-KRX tier anymore. Retired ids — including H4's `exaone-4.0-1.2b`
+(`300a99b3…`) — stay in the registry so pre-fork feed rows still resolve to a
+name instead of raw hex.
 
 **Coin selection** (advanced builder): largest-first; select until
 `change > 0 && 1e12/change + (escrow ? 1e12/escrow : 0) ≤ 8e4`; insufficient if

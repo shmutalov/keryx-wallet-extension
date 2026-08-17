@@ -136,9 +136,9 @@ check('bad destination address throws', throws(() => buildTransferTx({
 }), 'Invalid'));
 
 // --- inference payload encoding ---
-const model = getModel('glm-4-9b-0414');
-const reward = inferenceRewardSompi('glm-4-9b-0414', 256);
-check('token surcharge math: 1.5 base + 4*0.05', reward === 150000000 + 4 * 5000000);
+const model = getModel('gemma-4-12b-abliterated');
+const reward = inferenceRewardSompi('gemma-4-12b-abliterated', 256);
+check('token surcharge math: 2.0 base + 4*0.05', reward === 200000000 + 4 * 5000000);
 const payloadHex = buildInferencePayload('Hello Keryx', model.idHex, 256, reward, MIN_FEE_SOMPI);
 const pl = hexToBytes(payloadHex);
 const dv = new DataView(pl.buffer);

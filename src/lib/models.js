@@ -1,25 +1,37 @@
-// Inference model registry — the H5 lineup. Mirrors keryx-node's
+// Inference model registry — the H6 lineup. Mirrors keryx-node's
 // `consensus/core/src/config/params.rs` (model ids = CIDv0[2..34] of each pinned
-// GGUF; base prices = INFERENCE_REWARD_MINIMUMS_V2_H4) and keryx-miner's
+// GGUF; base prices = INFERENCE_REWARD_MINIMUMS_V2_H6) and keryx-miner's
 // `src/models.rs`. Keep this in lockstep with those; the shim resolves unknown
 // ids to raw hex, and capabilities/feed fall back to id-hex matching. Live miner
 // counts come from GET /api/v1/capabilities at runtime.
 //
-// H5 (`POM_TIERS_H5`) swaps ONLY tier 0: EXAONE-4.0-1.2B → Qwen3-8B-abliterated,
-// raising the tier-0 VRAM floor to ~6 GB; tiers 1-4 carry over from H4 unchanged.
-// The retired EXAONE entry stays listed (`retired: true`) so historical feed rows
-// still render by name — the picker filters it out, no miner serves it post-H5.
+// H6 (`POM_TIERS_H6`, gated by `pom_v3_activation`, mainnet DAA 76,316,623) keeps
+// 5 tiers: tier 0 = Qwen3.5-9B-abliterated (replaces BOTH Qwen3-8B and
+// Mistral-7B), tier 1 = GLM-4-9B (slides from position 2), tier 2 =
+// gemma-4-12B-abliterated (NEW, 16 GB cards, the new default), tiers 3-4
+// unchanged. There is no sub-1-KRX tier anymore. Retired entries stay listed
+// (`retired: true`) so historical feed rows still render by name — the picker
+// filters them out, no miner serves them post-H6.
 
 export const INFERENCE_MODELS = [
   {
+    key: 'qwen3.5-9b-abliterated',
+    label: 'Qwen3.5-9B · uncensored · 9B (Q5_K_M)',
+    name: 'Qwen3.5-9B (uncensored)',
+    idHex: 'bd34568cd89f5f19c6c3a6e1a61b929bc868709409eaad8e672d85f3c1eb5710',
+    baseSompi: 100000000, // 1.0 KRX  (--very-light)
+  },
+  {
+    // Retired at H6 (the H5 tier 0) — kept for historical AiRequest decode only.
     key: 'qwen3-8b-abliterated',
     label: 'Qwen3-8B · uncensored · 8B (Q4_K_S)',
     name: 'Qwen3-8B (uncensored)',
     idHex: 'd42fa6ee00e07d49b046090a56af0e7bd61025937c502e2c574a72874c350d24',
-    baseSompi: 50000000, // 0.5 KRX  (--very-light)
+    baseSompi: 50000000, // 0.5 KRX  (was --very-light)
+    retired: true,
   },
   {
-    // Retired at H5 (the pre-fork tier 0) — kept for historical AiRequest decode only.
+    // Retired at H5 (the H4 tier 0) — kept for historical AiRequest decode only.
     key: 'exaone-4.0-1.2b',
     label: 'EXAONE-4.0-1.2B · uncensored · 1.2B (Q4_K_M)',
     name: 'EXAONE-4.0-1.2B (uncensored)',
@@ -28,18 +40,27 @@ export const INFERENCE_MODELS = [
     retired: true,
   },
   {
+    // Retired at H6 (the H4/H5 tier 1) — kept for historical AiRequest decode only.
     key: 'mistral-7b-v0.3',
     label: 'Mistral-7B-v0.3 · uncensored · 7B (Q6_K)',
     name: 'Mistral-7B-v0.3 (uncensored)',
     idHex: '8c2fea600f0eefe7048741a5119cb7be303037f59fc026e48382658f23581e0a',
-    baseSompi: 100000000, // 1.0 KRX  (--light)
+    baseSompi: 100000000, // 1.0 KRX  (was --light)
+    retired: true,
   },
   {
     key: 'glm-4-9b-0414',
     label: 'GLM-4-9B-0414 · uncensored · 9B (Q6_K)',
     name: 'GLM-4-9B-0414 (uncensored)',
     idHex: 'fa2f13be0850e26c5ce86c7ac79da85e300c1da8b3290f9a18d47105f1f2140a',
-    baseSompi: 150000000, // 1.5 KRX  (default)
+    baseSompi: 150000000, // 1.5 KRX  (--light)
+  },
+  {
+    key: 'gemma-4-12b-abliterated',
+    label: 'gemma-4-12B · uncensored · 12B (Q6_K)',
+    name: 'gemma-4-12B (uncensored)',
+    idHex: '399984045600f7d58d1b2cf01e6a4bf466fa15c7ac31bd0dd1a71e003b617cc6',
+    baseSompi: 200000000, // 2.0 KRX  (default)
   },
   {
     key: 'qwen3.6-27b',
