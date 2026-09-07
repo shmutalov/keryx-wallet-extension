@@ -58,7 +58,7 @@
   "approval_inference_action": { "message": "KI-Inferenz" },
   "approval_query": { "message": "Anfrage" },
   "approval_max_tokens": { "message": "Max. Tokens" },
-  "approval_reward_escrow": { "message": "Belohnung (Treuhand)" },
+  "approval_reward_escrow": { "message": "Belohnung (Tresor)" },
 
   "settings_language_label": { "message": "Sprache" },
   "settings_language_hint": { "message": "Sprache der Benutzeroberfläche. „Automatisch“ folgt Ihrem Browser." },

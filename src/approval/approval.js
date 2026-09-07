@@ -402,7 +402,6 @@ function renderInference() {
         const [utxos, info] = await Promise.all([api.utxos(wallet.address, 400), api.info().catch(() => null)]);
         busy(t('status_signing'));
         const payloadHex = buildInferencePayload(prompt.trim(), model.idHex, maxTokens, reward, fee);
-        const minerPubkey = cap?.miner_pubkeys?.[0];
         const built = buildInferenceTx({
           utxos,
           changeAddress: wallet.address,
@@ -410,7 +409,7 @@ function renderInference() {
           privateKeyHex: wallet.privateKeyHex,
           currentDaaScore: info?.last_daa_score ?? 0,
           payloadHex,
-          escrow: minerPubkey ? { pubkeyHex: minerPubkey, amountSompi: reward } : undefined,
+          rewardSompi: reward,
         });
         busy(t('status_broadcasting'));
         const res = await api.broadcast(built.tx);

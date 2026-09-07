@@ -6,6 +6,7 @@ import {
   buildInferenceTx,
   buildInferencePayload,
   escrowScriptPublicKey,
+  INFERENCE_VAULT_SCRIPT_HEX,
   transactionSigningHash,
   spendableUtxos,
   signTxJson,
@@ -148,13 +149,17 @@ check('payload: u64le reward @36', dv.getBigUint64(36, true) === BigInt(reward))
 check('payload: u64le priority fee @44', dv.getBigUint64(44, true) === BigInt(MIN_FEE_SOMPI));
 check('payload: utf-8 prompt @52', new TextDecoder().decode(pl.slice(52)) === 'Hello Keryx');
 
-// --- escrow script ---
+// --- pre-H8 escrow script (legacy decode only; consensus rejects it in an AiRequest since H8) ---
 const minerPub = '22'.repeat(32);
 const escrowScript = escrowScriptPublicKey(minerPub);
 // 36000 = 0x8CA0 -> minimal LE push [a0, 8c], CSV(0xb1 — relative lock), push32 pubkey, CHECKSIG(0xac)
 check('escrow script: <36000> CSV <pubkey> CHECKSIG', escrowScript === `02a08cb120${minerPub}ac`);
 
-// --- inference tx: escrow + change, non-native subnetwork ---
+// --- H8 reward vault: OP_RETURN(0x6a) PUSH7 "aivault" (keryx_inference::INFERENCE_VAULT_SCRIPT) ---
+check('vault script is OP_RETURN "aivault"',
+  INFERENCE_VAULT_SCRIPT_HEX === '6a07' + Buffer.from('aivault', 'utf8').toString('hex'));
+
+// --- inference tx: change + vault, non-native subnetwork ---
 const inf = buildInferenceTx({
   utxos: [utxo('a', 5_00000000), utxo('b', 2_00000000)],
   changeAddress: sender.address,
@@ -162,30 +167,43 @@ const inf = buildInferenceTx({
   privateKeyHex: sender.privateKeyHex,
   currentDaaScore: daa,
   payloadHex,
-  escrow: { pubkeyHex: minerPub, amountSompi: reward },
+  rewardSompi: reward,
 });
 check('inference tx uses inference subnetwork + payload', inf.tx.subnetwork_id === INFERENCE_SUBNETWORK_ID && inf.tx.payload === payloadHex);
-check('escrow output pays reward to escrow script',
-  inf.tx.outputs.some((o) => o.amount === reward && o.script_public_key === escrowScript));
-check('change returns to self', inf.tx.outputs.some(
-  (o) => o.script_public_key === addressToScriptPublicKey(sender.address) &&
-         o.amount === inf.totalIn - reward - MIN_FEE_SOMPI));
+check('outputs[1] is the reward vault worth inference_reward (consensus: exact script, version 0)',
+  inf.tx.outputs.length === 2 && inf.tx.outputs[1].amount === reward &&
+  inf.tx.outputs[1].script_version === 0 && inf.tx.outputs[1].script_public_key === INFERENCE_VAULT_SCRIPT_HEX);
+check('outputs[0] is the change back to self',
+  inf.tx.outputs[0].script_public_key === addressToScriptPublicKey(sender.address) &&
+  inf.tx.outputs[0].amount === inf.totalIn - reward - MIN_FEE_SOMPI);
+check('no output ever pays a miner escrow', !inf.tx.outputs.some((o) => o.script_public_key === escrowScript));
 check('inference signatures verify', inf.tx.inputs.every((inp, i) =>
   schnorr.verify(hexToBytes(inp.signature_script).slice(1, 65),
     transactionSigningHash(inf.unsigned, i), xOnlyPub)));
 
-// --- mass constraint: tiny change gets folded into the fee ---
-const tiny = buildInferenceTx({
+// --- mass constraint: the vault must stay at outputs[1], so tiny change can no longer be folded away ---
+check('tiny change (would leave the vault at outputs[0]) throws instead of building', throws(() => buildInferenceTx({
   utxos: [utxo('a', reward + MIN_FEE_SOMPI + 1000)], // change of 1000 sompi -> 1e12/1000 >> 8e4
   changeAddress: sender.address,
   feeSompi: MIN_FEE_SOMPI,
   privateKeyHex: sender.privateKeyHex,
   currentDaaScore: daa,
   payloadHex,
-  escrow: { pubkeyHex: minerPub, amountSompi: reward },
+  rewardSompi: reward,
+}), 'Insufficient funds'));
+// Smallest change that clears 1e12/change + 1e12/reward <= 8e4 builds fine.
+const minChange = Math.ceil(1e12 / (80000 - 1e12 / reward));
+const edge = buildInferenceTx({
+  utxos: [utxo('a', reward + MIN_FEE_SOMPI + minChange)],
+  changeAddress: sender.address,
+  feeSompi: MIN_FEE_SOMPI,
+  privateKeyHex: sender.privateKeyHex,
+  currentDaaScore: daa,
+  payloadHex,
+  rewardSompi: reward,
 });
-check('tiny change folded into fee (no change output)',
-  tiny.tx.outputs.length === 1 && tiny.tx.outputs[0].amount === reward && tiny.fee === MIN_FEE_SOMPI + 1000);
+check('minimal viable change keeps both outputs and the fee untouched',
+  edge.tx.outputs.length === 2 && edge.tx.outputs[0].amount === minChange && edge.fee === MIN_FEE_SOMPI);
 
 check('inference insufficient funds throws', throws(() => buildInferenceTx({
   utxos: [utxo('a', 1000)],
@@ -193,8 +211,16 @@ check('inference insufficient funds throws', throws(() => buildInferenceTx({
   feeSompi: MIN_FEE_SOMPI,
   privateKeyHex: sender.privateKeyHex,
   payloadHex,
-  escrow: { pubkeyHex: minerPub, amountSompi: reward },
+  rewardSompi: reward,
 }), 'Insufficient funds'));
+
+check('AiRequest without a reward vault is refused', throws(() => buildInferenceTx({
+  utxos: [utxo('a', 5_00000000)],
+  changeAddress: sender.address,
+  feeSompi: MIN_FEE_SOMPI,
+  privateKeyHex: sender.privateKeyHex,
+  payloadHex,
+}), 'reward vault'));
 
 // --- sighash types (Kaspa reused-values rules; `unsigned` has 2 inputs, 2 outputs) ---
 const eq = (a, b) => Buffer.compare(a, b) === 0;

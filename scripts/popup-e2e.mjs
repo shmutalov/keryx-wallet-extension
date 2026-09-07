@@ -273,7 +273,7 @@ check('15k', 'no save-to-book offer for known address', !byId('save-dest-btn'));
 app().querySelector('.link-btn').click(); // back to dashboard
 await until(() => !!byId('lock-btn'), 10);
 
-// --- AI inference: dedicated page, cost math, escrowed AiRequest broadcast ---
+// --- AI inference: dedicated page, cost math, vaulted AiRequest broadcast (H8 reward routing) ---
 mockBalance = true;
 byId('inference-btn').click();
 await sleep(100);
@@ -297,12 +297,16 @@ byId('inf-submit').click();
 await until(() => byId('inf-status')?.className === 'success-box', 30);
 check('15q', 'AiRequest submitted, tx id shown', byId('inf-status').textContent.includes('e2e0'));
 const promptHex = Buffer.from('What is Keryx?', 'utf8').toString('hex');
-const escrowOut = broadcastBody?.outputs?.find((o) => o.amount === 220000000); // gemma 2.0 base + 0.2 tokens
-check('15r', 'broadcast: inference subnetwork, model-id payload with prompt, CSV escrow to miner',
+const vaultOut = broadcastBody?.outputs?.[1]; // consensus: outputs[1] = OP_RETURN "aivault", value >= reward
+check('15r', 'broadcast: inference subnetwork, model-id payload with prompt, reward vault at outputs[1]',
   broadcastBody?.subnetwork_id === '03' + '0'.repeat(38) &&
   broadcastBody?.payload?.startsWith(DEFAULT_MODEL_ID) &&
   broadcastBody?.payload?.endsWith(promptHex) &&
-  escrowOut?.script_public_key === `02a08cb120${MINER_PUB}ac`);
+  broadcastBody?.outputs?.length === 2 &&
+  vaultOut?.amount === 220000000 && // gemma 2.0 base + 0.2 tokens
+  vaultOut?.script_version === 0 &&
+  vaultOut?.script_public_key === '6a0761697661756c74' &&
+  !broadcastBody.outputs.some((o) => o.script_public_key === `02a08cb120${MINER_PUB}ac`));
 await until(() => byId('inf-feed')?.querySelectorAll('.inf-item').length === 2, 20);
 check('15s', 'live feed renders responded + pending items with badges',
   byId('inf-feed').textContent.includes('✓ RESPONDED') &&

@@ -97,7 +97,7 @@ export function getModelByIdHex(idHex) {
   return INFERENCE_MODELS.find((m) => m.idHex === h);
 }
 
-/** Escrow amount (the "inference reward"): model base price + token surcharge. */
+/** Reward-vault amount (the "inference_reward"): model base price + token surcharge. */
 export function inferenceRewardSompi(modelKey, maxTokens) {
   const model = getModel(modelKey);
   if (!model) throw new Error(`Unknown model: ${modelKey}`);

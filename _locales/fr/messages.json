@@ -58,7 +58,7 @@
   "approval_inference_action": { "message": "Inférence IA" },
   "approval_query": { "message": "Requête" },
   "approval_max_tokens": { "message": "Tokens max" },
-  "approval_reward_escrow": { "message": "Récompense (séquestre)" },
+  "approval_reward_escrow": { "message": "Récompense (coffre)" },
 
   "settings_language_label": { "message": "Langue" },
   "settings_language_hint": { "message": "Langue de l’interface. « Automatique » suit celle de votre navigateur." },

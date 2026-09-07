@@ -59,8 +59,12 @@ const txid = await window.keryx.submitInference({
 });
 ```
 
-The wallet computes the escrowed reward (model base + token surcharge), builds
-the AiRequest transaction and shows the full cost in the approval window.
+The wallet computes the reward (model base + token surcharge), builds the
+AiRequest transaction — the reward locked in the keyless `OP_RETURN "aivault"`
+vault at `outputs[1]`, as consensus requires since the H8 hardfork — and shows
+the full cost in the approval window. The reward is minted to the miner that
+serves the request, or burns if none does, so the wallet refuses to submit when
+no miner currently serves the chosen model.
 
 ## `signTx` — arbitrary transactions, HTLC claim & refund
 

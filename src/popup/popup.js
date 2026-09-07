@@ -605,7 +605,7 @@ function renderInference() {
   const totalSompi = () => rewardSompi() + feeSompi();
 
   function minerInfo() {
-    if (!capabilities) return { count: null, pubkey: undefined }; // endpoint unreachable
+    if (!capabilities) return { count: null }; // endpoint unreachable
     // Match on the model key, but fall back to the on-chain id: an API host
     // whose model registry lags ours reports the raw model_id_hex instead of
     // the key, which would otherwise read as "0 miners" for a valid model.
@@ -613,7 +613,7 @@ function renderInference() {
     const cap = capabilities.find(
       (c) => c.model === modelSelect.value || (selected && c.model_id_hex === selected.idHex)
     );
-    return { count: cap?.miner_count ?? 0, pubkey: cap?.miner_pubkeys?.[0] };
+    return { count: cap?.miner_count ?? 0 };
   }
 
   function refreshEstimate() {
@@ -677,7 +677,6 @@ function renderInference() {
       ]);
       submit.textContent = t('status_signing');
       const payloadHex = buildInferencePayload(prompt, model.idHex, maxTokens(), reward, fee);
-      const { pubkey } = minerInfo();
       const built = buildInferenceTx({
         utxos,
         changeAddress: address,
@@ -685,7 +684,7 @@ function renderInference() {
         privateKeyHex: state.wallet.privateKeyHex,
         currentDaaScore: info?.last_daa_score ?? 0,
         payloadHex,
-        escrow: pubkey ? { pubkeyHex: pubkey, amountSompi: reward } : undefined,
+        rewardSompi: reward,
       });
       submit.textContent = t('status_broadcasting');
       const res = await api.broadcast(built.tx);

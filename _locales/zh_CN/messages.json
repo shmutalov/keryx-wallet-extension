@@ -58,7 +58,7 @@
   "approval_inference_action": { "message": "AI 推理" },
   "approval_query": { "message": "查询" },
   "approval_max_tokens": { "message": "最大 token 数" },
-  "approval_reward_escrow": { "message": "奖励（托管）" },
+  "approval_reward_escrow": { "message": "奖励（保险库）" },
 
   "settings_language_label": { "message": "语言" },
   "settings_language_hint": { "message": "界面语言。“自动”跟随您的浏览器。" },

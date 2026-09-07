@@ -58,7 +58,7 @@
   "approval_inference_action": { "message": "Inferencia de IA" },
   "approval_query": { "message": "Consulta" },
   "approval_max_tokens": { "message": "Máx. de tokens" },
-  "approval_reward_escrow": { "message": "Recompensa (en garantía)" },
+  "approval_reward_escrow": { "message": "Recompensa (bóveda)" },
 
   "settings_language_label": { "message": "Idioma" },
   "settings_language_hint": { "message": "Idioma de la interfaz. «Automático» sigue el de tu navegador." },

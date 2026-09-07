@@ -118,7 +118,7 @@
     broadcastTx: (tx) => request('krx_broadcastTx', { tx }),
 
     /**
-     * Submit an AI inference request (AiRequest transaction with miner escrow).
+     * Submit an AI inference request (AiRequest transaction with the reward vault).
      * @param {{model: string, prompt: string, maxTokens?: number, priorityFeeSompi?: number}} opts
      * @returns {Promise<string>} transaction id
      */

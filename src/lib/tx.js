@@ -13,7 +13,13 @@ export const INFERENCE_SUBNETWORK_ID = '0300000000000000000000000000000000000000
 export const MIN_FEE_SOMPI = 30000000; // 0.3 KRX
 export const COINBASE_MATURITY_DAA = 1000;
 export const ESCROW_LOCK_BLOCKS = 36000;
-// mass constraint used by the official wallet: 1e12/change + 1e12/escrow <= 8e4
+// Keyless inference reward vault: OP_RETURN(0x6a) PUSH7 "aivault". Since the H8
+// hardfork (keryx-node `reward_routing_activation`, mainnet DAA 79,210,000) an
+// AiRequest's outputs[1] must carry EXACTLY this version-0 script, worth at
+// least inference_reward; a later coinbase mints the reward to the first
+// accepted responder (or it burns). Mirrors keryx_inference::INFERENCE_VAULT_SCRIPT.
+export const INFERENCE_VAULT_SCRIPT_HEX = '6a0761697661756c74';
+// mass constraint used by the official wallet: 1e12/change + 1e12/vault <= 8e4
 const MASS_LIMIT = 80000;
 
 const MAX_SEQUENCE = 18446744073709551615n;
@@ -290,12 +296,14 @@ export function buildInferencePayload(prompt, modelIdHex, maxTokens = 128, rewar
 }
 
 /**
- * Escrow script paying the executing miner, spendable only via an input whose
- * sequence encodes a relative lock >= lockBlocks:
+ * Pre-H8 escrow script paying the executing miner, spendable only via an input
+ * whose sequence encodes a relative lock >= lockBlocks:
  *   <lockBlocks LE minimal push> OP_CHECKSEQUENCEVERIFY OP_DATA_32 <x-only pubkey> OP_CHECKSIG
  * This is a RELATIVE (sequence) lock — keryx-node classifies exactly this
  * pattern as ScriptClass::CsvPubKey ("OPoI escrow"). Note the opcode
  * renumbering vs Bitcoin: on Keryx/Kaspa CSV = 0xb1 and CLTV = 0xb0.
+ * Consensus REJECTS this script in AiRequest.outputs[1] since H8 (the keyless
+ * vault replaced it); kept for decoding historical requests and for tests.
  */
 export function escrowScriptPublicKey(pubkeyHex, lockBlocks = ESCROW_LOCK_BLOCKS) {
   const pubkey = hexToBytes(pubkeyHex);
@@ -319,9 +327,12 @@ export function escrowScriptPublicKey(pubkeyHex, lockBlocks = ESCROW_LOCK_BLOCKS
 
 /**
  * Build and sign a payload-carrying transaction (AiRequest), faithful port of
- * the official wallet's advanced builder: self-change plus an optional escrow
- * output, with the change either kept (if the mass constraint allows) or
- * folded into the fee.
+ * the official wallet's advanced builder: outputs[0] = self-change,
+ * outputs[1] = the keyless reward vault worth `rewardSompi` (the payload's
+ * inference_reward). Consensus requires both outputs in that order, so the
+ * change can never be folded into the fee: when the mass constraint leaves no
+ * room for a change output the build fails with an actionable error instead
+ * of broadcasting a transaction the node would reject.
  */
 export function buildInferenceTx({
   utxos,
@@ -331,12 +342,15 @@ export function buildInferenceTx({
   currentDaaScore = 0,
   payloadHex = '',
   subnetworkId = INFERENCE_SUBNETWORK_ID,
-  escrow, // { pubkeyHex, amountSompi } | undefined
+  rewardSompi, // vault amount (= inference_reward), required
 }) {
   if (!Number.isSafeInteger(feeSompi) || feeSompi < 0) throw new Error('Invalid fee');
-  const escrowAmount = escrow?.amountSompi ?? 0;
+  if (!Number.isSafeInteger(rewardSompi) || rewardSompi <= 0) {
+    throw new Error('Refusing to build an AiRequest without a reward vault output');
+  }
+  const escrowAmount = rewardSompi;
   const need = feeSompi + escrowAmount;
-  const escrowMass = escrowAmount > 0 ? 1e12 / escrowAmount : 0;
+  const escrowMass = 1e12 / escrowAmount;
 
   const candidates = spendableUtxos(utxos, currentDaaScore).sort(
     (a, b) => b.amount_sompi - a.amount_sompi
@@ -354,27 +368,29 @@ export function buildInferenceTx({
   }
   safeAmount(sum, 'total input sum');
 
-  let change = sum - need;
-  // change too small to satisfy the mass limit -> fold it into the fee
-  const dropChange = escrowAmount > 0 && 1e12 / change + escrowMass > MASS_LIMIT;
-  const extraFee = dropChange ? change : 0;
-  if (dropChange) change = 0;
+  const change = sum - need;
+  // The vault must be outputs[1], so a change output is mandatory and has to
+  // clear the mass constraint on its own (the site used to fold tiny change
+  // into the fee, which leaves the vault at outputs[0] -> rejected).
+  if (1e12 / change + escrowMass > MASS_LIMIT) {
+    const minChange = Math.ceil(1e12 / (MASS_LIMIT - escrowMass));
+    throw new Error(
+      `Insufficient funds: an AiRequest needs at least ${minChange} sompi of change on top of reward + fee (have ${change})`
+    );
+  }
 
-  const outputs = [];
-  if (!dropChange) {
-    outputs.push({
+  const outputs = [
+    {
       amount: change,
       script_version: 0,
       script_public_key: addressToScriptPublicKey(changeAddress),
-    });
-  }
-  if (escrow) {
-    outputs.push({
+    },
+    {
       amount: escrowAmount,
       script_version: 0,
-      script_public_key: escrowScriptPublicKey(escrow.pubkeyHex),
-    });
-  }
+      script_public_key: INFERENCE_VAULT_SCRIPT_HEX,
+    },
+  ];
 
   const payload = payloadHex ? hexToBytes(payloadHex) : new Uint8Array(0);
   const unsigned = {
@@ -403,7 +419,7 @@ export function buildInferenceTx({
     unsigned,
     totalIn: sum,
     totalOut: change + escrowAmount,
-    fee: feeSompi + extraFee,
+    fee: feeSompi,
   };
 }
 

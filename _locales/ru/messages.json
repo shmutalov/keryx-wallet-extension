@@ -58,7 +58,7 @@
   "approval_inference_action": { "message": "ИИ-инференс" },
   "approval_query": { "message": "Запрос" },
   "approval_max_tokens": { "message": "Макс. токенов" },
-  "approval_reward_escrow": { "message": "Награда (эскроу)" },
+  "approval_reward_escrow": { "message": "Награда (хранилище)" },
 
   "settings_language_label": { "message": "Язык" },
   "settings_language_hint": { "message": "Язык интерфейса. «Автоматически» следует за вашим браузером." },

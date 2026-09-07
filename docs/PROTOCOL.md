@@ -165,15 +165,33 @@ skip batches whose value ≤ fee.
 `u64le priority_fee @44`, `utf-8 prompt from 52`.
 
 **Cost model** (all sompi): `priority_fee = max(3e7, user input)` — this is the tx fee;
-`inference_reward = model_base + 5e6 × ceil(max_tokens/64)` — paid into an escrow
-output to `capabilities[model].miner_pubkeys[0]` with script
-`<36000 LE minimal push> 0xb1(OP_CHECKSEQUENCEVERIFY) 0x20 <miner x-only pubkey> 0xac(CHECKSIG)`.
-This is a **relative (sequence) lock**, not CLTV: the miner can spend it only with
-an input whose `sequence` encodes a relative lock ≥ 36000. keryx-node recognizes
-exactly this pattern as `ScriptClass::CsvPubKey` ("OPoI escrow"). See the
-timelock-opcode table below — Keryx/Kaspa renumbered these vs Bitcoin.
-If `/capabilities` is unreachable the site submits without the escrow output.
-UI blocks submission when `miner_count === 0` for the chosen model.
+`inference_reward = model_base + 5e6 × ceil(max_tokens/64)` — locked in
+`outputs[1]`, the **reward vault**.
+
+**Reward vault (H8 reward routing — keryx-node `reward_routing_activation`,
+mainnet DAA 79,210,000; re-verified against the site bundle and keryx-node
+v1.6.1 on 2026-09-07).** Consensus (`check_ai_request_escrow_output`) requires
+of every AiRequest: `outputs.len() ≥ 2`; `outputs[1]` has script version 0 and
+EXACTLY the script `6a0761697661756c74` = `OP_RETURN(0x6a) PUSH7 "aivault"`
+(`keryx_inference::INFERENCE_VAULT_SCRIPT`); `outputs[1].value ≥ inference_reward`;
+tx fee ≥ `priority_fee`. The vault is keyless and provably unspendable — it
+names no miner; a later coinbase mints the reward to the first accepted
+responder, or it burns if nobody serves the request. The mempool exempts this
+exact script from the dust/non-standard output checks (a look-alike OP_RETURN
+is rejected). The site passes `{ vault: true }` unconditionally — there is no
+DAA switch, H8 is long past. `/capabilities` `miner_pubkeys` is no longer used
+for anything; the UI still blocks submission when `miner_count === 0` because
+an unserved vault burns the reward.
+
+*Pre-H8 (historical, for decoding old feed rows only):* `outputs[1]` was a CSV
+escrow paying `capabilities[model].miner_pubkeys[0]` with script
+`<36000 LE minimal push> 0xb1(OP_CHECKSEQUENCEVERIFY) 0x20 <miner x-only pubkey> 0xac(CHECKSIG)`
+— a **relative (sequence) lock**, not CLTV, which keryx-node classifies as
+`ScriptClass::CsvPubKey` ("OPoI escrow"); see the timelock-opcode table below.
+Consensus now rejects that script in an AiRequest (`AiRequestInvalidEscrowScript`).
+
+The site also refused submissions while `last_daa_score < 92,550,000` (its
+"paused until the H12 activation" banner); H12 is past and the gate is inert.
 
 **Model registry** (hardcoded in the site bundle; base price in KRX):
 
@@ -194,9 +212,13 @@ no sub-1-KRX tier anymore. Retired ids — including H4's `exaone-4.0-1.2b`
 name instead of raw hex.
 
 **Coin selection** (advanced builder): largest-first; select until
-`change > 0 && 1e12/change + (escrow ? 1e12/escrow : 0) ≤ 8e4`; insufficient if
-`sum ≤ fee + escrow`; if the final change violates the mass constraint it is
-folded into the fee (no change output).
+`change > 0 && 1e12/change + 1e12/vault ≤ 8e4`; insufficient if
+`sum ≤ fee + vault`. The site still folds a change that violates the mass
+constraint into the fee (no change output) — but that leaves the vault at
+`outputs[0]` and the node rejects the tx (`AiRequestMissingEscrowOutput`), so
+this wallet fails the build with an "Insufficient funds" error instead
+(minimum change = `ceil(1e12 / (8e4 − 1e12/vault))`, ≈0.142 KRX at a 1.05 KRX
+reward).
 
 **Feed**: `GET /infer?limit=` items
 `{ tx_id, model, prompt, max_tokens, inference_reward, priority_fee, daa_score,
