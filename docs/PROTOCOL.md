@@ -46,7 +46,9 @@ the site's signing code and is the spec for phase 2.
 | `GET /addresses/{addr}?limit=N&offset=M` | `{ address, total_received_sompi, total_tx_count, transactions: [{ tx_id, amount_sompi, is_spend, daa_score, block_hash, address }] }` |
 | `POST /broadcast` | body = signed tx JSON (below) → `{ transaction_id }` |
 | `GET /market` | `{ price_usd, market_cap_usd, volume_24h_usd, change_24h_pct, ... }` |
-| others | `/blocks`, `/blocks/{hash}`, `/blocks/{hash}/txs`, `/transactions`, `/transactions/{id}`, `/graph`, `/infer?limit=`, `/inference/{id}`, `/challenges`, `/hashrate-history?period=`, `/richlist`, `/peers`, `/peers/geo`, `/capabilities` |
+| `GET /ai/providers` | H14 miners to seal to — see *Private inference* |
+| `GET /inference/{id}` | one request incl. its sealed answers — see *Private inference* |
+| others | `/blocks`, `/blocks/{hash}`, `/blocks/{hash}/txs`, `/transactions`, `/transactions/{id}`, `/graph`, `/infer?limit=`, `/challenges`, `/hashrate-history?period=`, `/richlist`, `/peers`, `/peers/geo`, `/capabilities` |
 
 Errors: non-2xx with JSON `{ error }`. Explorer links: `/tx/{tx_id}`.
 
@@ -193,7 +195,7 @@ Consensus now rejects that script in an AiRequest (`AiRequestInvalidEscrowScript
 The site also refused submissions while `last_daa_score < 92,550,000` (its
 "paused until the H12 activation" banner); H12 is past and the gate is inert.
 
-**Model registry** (hardcoded in the site bundle; base price in KRX):
+**Model registry** (hardcoded in the site bundle; H6 base price in KRX — for the H14 lineup and flat prices see *Private inference* below):
 
 | key | model_id_hex | base |
 |---|---|---|
@@ -228,3 +230,100 @@ block_hash, payload_prefix, result, result_text, result_block_hash }`.
 `GET /challenges?limit=` matching `challenge.request_hash_hex.slice(0,16) ===
 item.payload_prefix` (fraud_proven ⇒ slashed); else RESPONDED (has result) or
 PENDING. The site polls the feed every 5 s.
+
+## Private inference — H14 (keryx-node v1.6.4, verified 2026-10-08)
+
+keryx-node `private_inference_activation` (**mainnet DAA 121,985,000**, ≈ 2026-10-09
+14:00 UTC; testnet 6,000). Spec: keryx-node `docs/private-inference.md`,
+`inference/src/private.rs`; client side ported in `src/lib/private.js` and
+cross-checked byte-for-byte against both the node's Rust code and keryx-labs.com's
+own `/infer` sealing module (pinned vectors in `scripts/tx-unit.mjs`).
+
+**Era rules (consensus, per block DAA).** Before the gate an AiRequest payload is
+≤ 4,096 bytes and an AiResponse carries no inline body. From the gate on, every
+AiRequest prompt **must** parse as a sealed envelope (`AiRequestNotPrivate`
+otherwise — plaintext requests invalidate the block, the mempool rejects them), and
+the payload cap rises to 65,536 bytes (AiRequest transient-mass allowance
+`(64 KiB + 4 KiB) × 4`). From gate + 72,000 DAA (one ledger horizon) every
+AiResponse must carry an inline body. The wallet stops sending in the last 600 DAA
+(~1 min) before the gate: a plaintext request mined after it is invalid, a sealed
+one mined before it would be read as a plaintext prompt.
+
+**Pricing from H14** (`INFERENCE_REWARD_MINIMUMS_FLAT`, no token surcharge): the
+`inference_reward` floor is fixed per model whatever `max_tokens` — 0.5 KRX for
+tier 0, +0.5 KRX per tier. The 0.3 KRX `priority_fee` (= tx fee) comes on top; the
+mass-based relay fee of a multi-KB request (≈ 1 sompi/gram, < 0.001 KRX) stays far
+below that flat minimum.
+
+**Lineup** (`POM_TIERS_H14`): tier 3 becomes Qwen3.8-27B; every other tier is unchanged.
+
+| tier | key | model_id_hex | H6 base (+surcharge) | H14 flat |
+|---|---|---|---|---|
+| 0 | qwen3.5-9b-abliterated | bd34568c… | 1.0 | 0.5 |
+| 1 | glm-4-9b-0414 | fa2f13be… | 1.5 | 1.0 |
+| 2 | gemma-4-12b-abliterated | 39998404… | 2.0 | 1.5 |
+| 3 | qwen3.6-27b → **qwen3.8-27b** | b8bdc01f… → 73740b443bdc00afda5fa34eb9999d3fea77dcc3f6de238fab701394cdc96fb3 | 2.5 | 2.0 |
+| 4 | kimi-linear-48b | 3dc09358… | 4.0 | 2.5 |
+
+**Request envelope** — the whole `prompt` field after the 52-byte header (all ints LE):
+
+```
+[magic 00 'K' 'X' 'P'] [version 01] [ephemeral pubkey E: 33, compressed]
+[nonce: 12] [n: 1, 1..=128]
+n × { [escrow pubkey R_i: 32, x-only, strictly ascending] [wrapped root key: 32 + 16 tag] }
+[ChaCha20-Poly1305(k_prompt, nonce, prompt)]
+```
+
+Keys (HKDF-SHA256, salt `"KeryxPrivateInferenceV1"`, one 32-byte block):
+`ss_i = SHA-256(compressed ECDH(e, lift_x(R_i)))` (libsecp default; `lift_x` = BIP-340
+even-Y lift, so a miner with an odd-Y key negates its secret);
+`kek_i = HKDF(ss_i, "kek" ‖ E ‖ R_i)`; `wrapped_i = ChaCha20-Poly1305(kek_i, nonce,
+root_key, aad = 52-byte request header)`; `k_prompt = HKDF(root_key, "prompt")` with
+`aad = request header ‖ envelope header` (everything before the ciphertext). The same
+12-byte nonce serves every wrap and the prompt — safe, each under a different key.
+Re-pricing, re-addressing or transplanting a wrapped key breaks authentication.
+
+**Root key.** The node only needs it random per request. keryx-labs.com derives it —
+`root_key = HKDF(salt "KeryxChatRootKeyV1", ikm = account private key, info = "root" ‖
+seed)` — and this wallet does the same, so either client opens the other's answers
+from the seed phrase alone and no secret is ever stored. `seed` (the **cohort seed**)
+is the outpoint the request's **first input** spends: `txid (32) ‖ index u32le` —
+unique, since no other transaction can spend it. The inputs are therefore chosen
+before the payload is built.
+
+**Recipients.** `GET /api/v1/ai/providers` (keryx-labs.com and the shim, same
+shape) → `{ virtual_daa_score, window_daa: 18000, cohort: [...], window: [...] }`, each
+`{ tier, model, model_id, identity, escrow_pubkey }` (node RPC `getServiceProviders`,
+≥ 1.6.4). Filter both lists by the request's `model_id`. The **target cohort** = the
+cohort's keys if ≤ 128, else the 128 with the lowest
+`rank = BLAKE2b-256("KeryxPrivateCohortV1" ‖ seed ‖ key)` (unkeyed, 32-byte digest);
+then add the window's other keys in rank order up to 128 (miners active in the last
+~30 min, as keryx-cli and the site do). Mainnet tiers had 7–46 miners on 2026-10-08,
+so an envelope is ~0.6–3.8 KB plus the prompt. Mempool admission
+(`validate_private_request_coverage`) rejects a request that misses **any** key of the
+target cohort at the sink (`the private AiRequest is not sealed to N of the M escrow
+keys of its tier cohort` — the wallet re-reads the providers and reseals once) or
+whose tier has no eligible miner. Consensus later tolerates
+`max(3, ⌈|T|/4⌉)` missing keys (miners who joined between sealing and arming). Every
+recipient must answer (silent ones are struck); the first credited answer wins the vault.
+
+**Answers.** A V2 AiResponse (174 bytes) may append `[0x80] [len: 4 LE] [body ≤
+32 KiB]`; the responder's Schnorr signature then covers `78 v1 bytes ‖ extension`.
+The body is a response envelope `[magic] [version] [nonce: 12]
+[ChaCha20-Poly1305(k_response, nonce, answer)]` with
+`k_response = HKDF(root_key, "response" ‖ responder escrow pubkey)` and
+`aad = request id ‖ responder escrow pubkey`. The **request id is the AiRequest's tx
+id** (H8 request identity). A body that does not start with the magic is the miner's
+plaintext note that it could not open the request.
+
+`GET /api/v1/inference/{tx_id}` → `{ tx_id, model, prompt, status: pending|completed,
+sealed, sealed_recipients, sealed_responses: [{ responder_pubkey, body (hex), … }],
+result_cid, result_block_hash, result_daa_score, … }` lists every inline answer,
+oldest first; the requester tries each until one opens (the site gives up after
+15 min). In the `/infer` feed a sealed request has `prompt: ""`, `sealed: true`,
+`sealed_recipients: n`, and `result` is only the multihash of the sealed body — not an
+IPFS pin, never fetch it. When a prompt (with its chat context) does not fit,
+keryx-labs.com seals it deflate-raw compressed behind a `00 'K' 'Z' 01` marker —
+a miner-side convention (the node's H14 banner advertises "prompts up to 64 KiB
+(compressed)"; keryx-node itself never inspects the plaintext). This wallet never
+compresses: the envelope fits a 55 KB prompt even at 128 recipients.

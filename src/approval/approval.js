@@ -17,14 +17,13 @@ import {
 } from '../lib/keryx.js';
 import {
   buildTransferTx,
-  buildInferenceTx,
-  buildInferencePayload,
   signTxJson,
   signPersonalMessage,
   MIN_FEE_SOMPI,
   SIGHASH_ALL,
 } from '../lib/tx.js';
-import { getModel, inferenceRewardSompi } from '../lib/models.js';
+import { getModel, inferenceRewardSompi, selectableModels } from '../lib/models.js';
+import { submitInference, inferenceEra } from '../lib/inference.js';
 import { api } from '../lib/api.js';
 import { unlockVault } from '../lib/vault.js';
 import { getSession, startSession, touchSession } from '../lib/session.js';
@@ -362,7 +361,14 @@ function renderSignTx() {
   );
 }
 
-function renderInference() {
+const INFERENCE_STEPS = {
+  utxos: 'status_loading_utxos',
+  providers: 'status_sealing',
+  signing: 'status_signing',
+  broadcasting: 'status_broadcasting',
+};
+
+async function renderInference() {
   const { model: modelKey, prompt, maxTokens: tokensRaw, priorityFeeSompi } = req.params ?? {};
   const model = getModel(modelKey);
   if (!model) return renderInvalid(`Unknown model: ${modelKey}`);
@@ -375,7 +381,24 @@ function renderInference() {
   const feeRaw = priorityFeeSompi ?? MIN_FEE_SOMPI;
   if (!Number.isSafeInteger(feeRaw) || feeRaw < 0) return renderInvalid('Invalid priorityFeeSompi');
   const fee = Math.max(MIN_FEE_SOMPI, feeRaw);
-  const reward = inferenceRewardSompi(modelKey, maxTokens);
+
+  // The price, the model lineup and plaintext-vs-sealed all depend on which
+  // side of the H14 gate the network is on.
+  show(header(t('approval_inference_action')), el('div', { class: 'loading' }, t('common_loading')));
+  let era;
+  try {
+    era = inferenceEra((await api.info())?.last_daa_score ?? 0);
+  } catch (e) {
+    return renderInvalid(e instanceof Error ? e.message : String(e));
+  }
+  if (era === 'switching') {
+    return renderInvalid('The H14 network upgrade activates in about a minute — try again once it is live');
+  }
+  const sealed = era === 'sealed';
+  if (!selectableModels(sealed).includes(model)) {
+    return renderInvalid(`${model.name} is not served ${sealed ? 'since' : 'before'} the H14 network upgrade`);
+  }
+  const reward = inferenceRewardSompi(modelKey, maxTokens, sealed);
 
   const status = statusBox();
   show(
@@ -389,31 +412,29 @@ function renderInference() {
       row(t('label_fee'), `${formatKRX(fee)} KRX`),
       row(t('label_total'), `${formatKRX(reward + fee)} KRX`)
     ),
+    sealed ? el('p', { id: 'inference-sealed', class: 'hint', style: 'text-align:left' }, t('approval_inference_sealed')) : null,
     status,
     actions(async (busy) => {
       try {
         const { wallet } = await signingContext();
         busy(t('status_loading_utxos'));
         const capabilities = await api.capabilities().catch(() => null);
-        const cap = capabilities?.find((c) => c.model === modelKey);
+        const cap = capabilities?.find((c) => c.model === modelKey || c.model_id_hex === model.idHex);
         if (capabilities && (cap?.miner_count ?? 0) === 0) {
           throw new Error(`No active miners for ${model.name} — the request would stay pending, fees lost`);
         }
-        const [utxos, info] = await Promise.all([api.utxos(wallet.address, 400), api.info().catch(() => null)]);
-        busy(t('status_signing'));
-        const payloadHex = buildInferencePayload(prompt.trim(), model.idHex, maxTokens, reward, fee);
-        const built = buildInferenceTx({
-          utxos,
-          changeAddress: wallet.address,
-          feeSompi: fee,
-          privateKeyHex: wallet.privateKeyHex,
-          currentDaaScore: info?.last_daa_score ?? 0,
-          payloadHex,
+        const res = await submitInference({
+          wallet,
+          modelKey,
+          prompt: prompt.trim(),
+          maxTokens,
           rewardSompi: reward,
+          feeSompi: fee,
+          sealed,
+          origin: req.origin,
+          onStep: (step) => busy(t(INFERENCE_STEPS[step])),
         });
-        busy(t('status_broadcasting'));
-        const res = await api.broadcast(built.tx);
-        await sendResult(res.transaction_id);
+        await sendResult(res.txId);
       } catch (e) {
         setStatus(status, 'error', e instanceof Error ? e.message : String(e));
         throw e;

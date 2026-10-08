@@ -14,13 +14,22 @@ import {
   shortAddress,
   DERIVATION_BASE,
 } from '../lib/keryx.js';
+import { buildTransferTx, MIN_FEE_SOMPI } from '../lib/tx.js';
 import {
-  buildTransferTx,
-  buildInferenceTx,
-  buildInferencePayload,
-  MIN_FEE_SOMPI,
-} from '../lib/tx.js';
-import { SELECTABLE_MODELS, getModel, getModelByIdHex, inferenceRewardSompi } from '../lib/models.js';
+  selectableModels,
+  getModel,
+  getModelByIdHex,
+  inferenceRewardSompi,
+  modelPriceSompi,
+} from '../lib/models.js';
+import { submitInference, checkAnswer, inferenceEra } from '../lib/inference.js';
+import { loadRequests, updateRequest } from '../lib/requests.js';
+import {
+  AI_REQUEST_HEADER_LEN,
+  MAX_AI_REQUEST_PAYLOAD_LEN,
+  MAX_PRIVATE_RECIPIENTS,
+  maxPrivatePromptLen,
+} from '../lib/private.js';
 import {
   getAddressBook,
   addBookEntry,
@@ -561,25 +570,50 @@ function renderSettings() {
 
 const ipfsCache = new Map(); // cid -> text | Promise
 
-/** AI inference: submit prompts on-chain (AiRequest) and watch the live feed. */
+/** Clamped long text with a show-more toggle (inference answers). */
+function clampedText(text) {
+  const long = text.length > 400;
+  const body = el('div', { class: `inf-result-text${long ? ' clamped' : ''}` }, text);
+  if (!long) return [body];
+  const toggle = el('button', { class: 'link-btn', style: 'font-size:10px;margin-top:2px' }, t('inf_show_more'));
+  toggle.addEventListener('click', () => {
+    const clamped = body.classList.toggle('clamped');
+    toggle.textContent = clamped ? t('inf_show_more') : t('inf_show_less');
+  });
+  return [body, toggle];
+}
+
+const SUBMIT_STEPS = {
+  utxos: 'status_loading_utxos',
+  providers: 'status_sealing',
+  signing: 'status_signing',
+  broadcasting: 'status_broadcasting',
+};
+
+/**
+ * AI inference: submit prompts on-chain (AiRequest) and watch the live feed.
+ * From H14 prompts are sealed to the model's miners; this account's sealed
+ * requests are listed with their decrypted answers.
+ */
 function renderInference() {
   const acct = activeAccount();
-  const { address } = state.wallet;
+  const wallet = state.wallet;
+  const { address } = wallet;
 
   let availableSompi = null;
   let capabilities = null; // null = unknown (endpoint unreachable)
   let challengesByPrefix = new Map();
   let busy = false;
+  let era = null; // null until the first /info: 'plain' | 'switching' | 'sealed'
+  let mine = []; // this account's sealed requests (requests.js), newest first
+  let polling = false;
+  const sealed = () => era === 'sealed';
 
   const availLine = el('div', { class: 'balance-meta' }, `${t('label_balance')}: …`);
   const modelSelect = el('select', { id: 'inf-model', class: 'account-select' });
-  for (const m of SELECTABLE_MODELS) {
-    const opt = el('option', { value: m.key },
-      `${m.label} · ${t('inf_from_price', formatKRX(m.baseSompi))}`);
-    if (m.key === 'gemma-4-12b-abliterated') opt.setAttribute('selected', '');
-    modelSelect.append(opt);
-  }
   const minersLine = el('div', { id: 'inf-miners', class: 'balance-meta' }, '');
+  const privacyLine = el('div', { id: 'inf-privacy', class: 'hint', style: 'text-align:left;display:none' },
+    t('inf_sealed_hint'));
   const promptInput = el('textarea', {
     id: 'inf-prompt', rows: '4', placeholder: t('inf_prompt_placeholder'),
   });
@@ -593,16 +627,41 @@ function renderInference() {
     autocomplete: 'off', spellcheck: 'false',
   });
   const totalLine = el('div', { id: 'inf-total', class: 'balance-meta' }, '');
+  const eraBox = el('div', { id: 'inf-era', class: 'error-box', style: 'display:none' }, t('inf_switching'));
   const statusBox = el('div', { id: 'inf-status', style: 'display:none' });
   const submit = el('button', { id: 'inf-submit', class: 'btn', disabled: '' }, t('inf_submit'));
+  const mineCard = el('div', { class: 'card', style: 'display:none' });
+  const mineList = el('div', { id: 'inf-mine', class: 'stack' });
   const feedList = el('div', { id: 'inf-feed', class: 'stack' },
     el('div', { class: 'loading' }, t('common_loading')));
+  const footer = el('p', { class: 'hint' }, t('inf_footer'));
 
   const toSompi = (v) => parseKRX((v || '0').trim().replace(',', '.'));
   const feeSompi = () => Math.max(MIN_FEE_SOMPI, toSompi(feeInput.value) || 0);
   const maxTokens = () => Number(tokensSlider.value);
-  const rewardSompi = () => inferenceRewardSompi(modelSelect.value, maxTokens());
+  const rewardSompi = () => inferenceRewardSompi(modelSelect.value, maxTokens(), sealed());
   const totalSompi = () => rewardSompi() + feeSompi();
+  // Before H14 the whole payload is capped at 4 KiB; a sealed prompt shares
+  // 64 KiB with an envelope of up to 128 recipients (checked exactly at sealing).
+  const promptLimit = () => (sealed()
+    ? maxPrivatePromptLen(MAX_PRIVATE_RECIPIENTS)
+    : MAX_AI_REQUEST_PAYLOAD_LEN - AI_REQUEST_HEADER_LEN);
+  const promptBytes = () => new TextEncoder().encode(promptInput.value.trim()).length;
+
+  /** (Re)build the model picker for the current side of the H14 gate, keeping the selection. */
+  function fillModels() {
+    const previous = modelSelect.value || 'gemma-4-12b-abliterated';
+    const models = selectableModels(sealed());
+    modelSelect.replaceChildren(...models.map((m) => {
+      const price = formatKRX(modelPriceSompi(m, sealed()));
+      return el('option', { value: m.key },
+        `${m.label} · ${sealed() ? t('inf_flat_price', price) : t('inf_from_price', price)}`);
+    }));
+    // Tier 3 changes model at H14: keep the user on the same tier.
+    const prevTier = getModel(previous)?.tier;
+    const keep = models.find((m) => m.key === previous) ?? models.find((m) => m.tier === prevTier);
+    modelSelect.value = keep?.key ?? 'gemma-4-12b-abliterated';
+  }
 
   function minerInfo() {
     if (!capabilities) return { count: null }; // endpoint unreachable
@@ -617,13 +676,16 @@ function renderInference() {
   }
 
   function refreshEstimate() {
+    if (era === null) return;
     const model = getModel(modelSelect.value);
     const { count } = minerInfo();
-    totalLine.textContent = t('inf_total',
-      formatKRX(totalSompi()),
-      formatKRX(model.baseSompi),
-      formatKRX(inferenceRewardSompi(modelSelect.value, maxTokens()) - model.baseSompi),
-      formatKRX(feeSompi()));
+    totalLine.textContent = sealed()
+      ? t('inf_total_flat', formatKRX(totalSompi()), formatKRX(rewardSompi()), formatKRX(feeSompi()))
+      : t('inf_total',
+        formatKRX(totalSompi()),
+        formatKRX(model.baseSompi),
+        formatKRX(rewardSompi() - model.baseSompi),
+        formatKRX(feeSompi()));
     if (count === null) minersLine.textContent = t('inf_miners_unknown');
     else if (count === 0) minersLine.textContent = t('inf_no_miners', model.name);
     else minersLine.textContent = t('inf_miners_count', count);
@@ -633,8 +695,14 @@ function renderInference() {
 
   function validate() {
     const { count } = minerInfo();
-    const funded = availableSompi === null || availableSompi > totalSompi();
-    const ok = !busy && promptInput.value.trim().length > 0 && funded && count !== 0;
+    const funded = era === null || availableSompi === null || availableSompi > totalSompi();
+    const fits = promptBytes() <= promptLimit();
+    charCount.textContent = fits
+      ? t('inf_chars', promptInput.value.length)
+      : t('inf_too_long', promptLimit().toLocaleString('en-US'));
+    charCount.style.color = fits ? '' : 'var(--mx-error)';
+    const ok = !busy && (era === 'plain' || era === 'sealed') && promptInput.value.trim().length > 0
+      && fits && funded && count !== 0;
     if (ok) submit.removeAttribute('disabled');
     else submit.setAttribute('disabled', '');
     availLine.style.color = availableSompi !== null && !funded ? 'var(--mx-error)' : '';
@@ -646,10 +714,7 @@ function renderInference() {
     tokensVal.textContent = tokensSlider.value;
     refreshEstimate();
   });
-  promptInput.addEventListener('input', () => {
-    charCount.textContent = t('inf_chars', promptInput.value.length);
-    validate();
-  });
+  promptInput.addEventListener('input', validate);
   promptInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doSubmit();
   });
@@ -660,46 +725,60 @@ function renderInference() {
     statusBox.style.display = '';
   }
 
+  /** Track the network's side of the H14 gate; the page reshapes once when it is crossed. */
+  async function loadEra() {
+    let info;
+    try {
+      info = await api.info();
+    } catch {
+      return; // keep the last known era; submit re-checks it anyway
+    }
+    const next = inferenceEra(info?.last_daa_score ?? 0);
+    if (next === era) return;
+    const crossed = (era === 'sealed') !== (next === 'sealed');
+    era = next;
+    eraBox.style.display = era === 'switching' ? '' : 'none';
+    privacyLine.style.display = sealed() ? '' : 'none';
+    footer.textContent = sealed() ? t('inf_footer_sealed') : t('inf_footer');
+    if (crossed || !modelSelect.options.length) fillModels();
+    renderMine();
+    refreshEstimate();
+  }
+
   async function doSubmit() {
     if (submit.disabled) return;
     const prompt = promptInput.value.trim();
-    const model = getModel(modelSelect.value);
-    const fee = feeSompi();
-    const reward = rewardSompi();
+    const modelKey = modelSelect.value;
     busy = true;
     validate();
     statusBox.style.display = 'none';
     try {
-      submit.textContent = t('status_loading_utxos');
-      const [utxos, info] = await Promise.all([
-        api.utxos(address, 400),
-        api.info().catch(() => null),
-      ]);
-      submit.textContent = t('status_signing');
-      const payloadHex = buildInferencePayload(prompt, model.idHex, maxTokens(), reward, fee);
-      const built = buildInferenceTx({
-        utxos,
-        changeAddress: address,
-        feeSompi: fee,
-        privateKeyHex: state.wallet.privateKeyHex,
-        currentDaaScore: info?.last_daa_score ?? 0,
-        payloadHex,
-        rewardSompi: reward,
+      const res = await submitInference({
+        wallet,
+        modelKey,
+        prompt,
+        maxTokens: maxTokens(),
+        rewardSompi: rewardSompi(),
+        feeSompi: feeSompi(),
+        sealed: sealed(),
+        onStep: (step) => { submit.textContent = t(SUBMIT_STEPS[step]); },
       });
-      submit.textContent = t('status_broadcasting');
-      const res = await api.broadcast(built.tx);
       setStatus('success',
-        el('div', {}, t('inf_submitted')),
+        el('div', {}, res.sealed ? t('inf_submitted_sealed', res.recipients) : t('inf_submitted')),
         el('div', { class: 'tx-link' }, t('inf_tx_label'),
-          el('a', { href: `${API_BASE}/tx/${res.transaction_id}`, target: '_blank', rel: 'noreferrer' },
-            res.transaction_id)),
+          el('a', { href: `${API_BASE}/tx/${res.txId}`, target: '_blank', rel: 'noreferrer' },
+            res.txId)),
         el('div', { class: 'hint', style: 'text-align:left;margin-top:4px' },
-          t('inf_submitted_hint')));
+          res.sealed ? t('inf_submitted_sealed_hint') : t('inf_submitted_hint')));
       promptInput.value = '';
-      charCount.textContent = t('inf_chars', '0');
+      if (res.sealed) {
+        mine = await loadRequests(wallet);
+        renderMine();
+      }
       loadOverviewData();
     } catch (e) {
       setStatus('error', e instanceof Error ? e.message : String(e));
+      loadEra(); // the gate may have just been crossed
     } finally {
       busy = false;
       submit.textContent = t('inf_submit');
@@ -719,39 +798,98 @@ function renderInference() {
     validate();
   }
 
+  function modelName(keyOrId) {
+    // Normally the registry key; fall back to id-hex resolution when the API
+    // host returned an unrecognised (raw) model id.
+    return (getModel(keyOrId) ?? getModelByIdHex(keyOrId))?.name ?? keyOrId;
+  }
+
+  function txLink(txId) {
+    return el('a', { href: `${API_BASE}/tx/${txId}`, target: '_blank', rel: 'noreferrer' }, `${txId.slice(0, 10)}…`);
+  }
+
+  /** This account's sealed requests: own prompt, then the decrypted answer or why there is none. */
+  function renderMine() {
+    mineCard.style.display = sealed() || mine.length ? '' : 'none';
+    if (!mine.length) {
+      mineList.replaceChildren(el('p', { class: 'hint', style: 'text-align:left' }, t('inf_mine_none')));
+      return;
+    }
+    mineList.replaceChildren(...mine.slice(0, 10).map((r) => {
+      const badge = r.status === 'answered'
+        ? el('span', { class: 'badge badge-ok' }, t('badge_responded'))
+        : r.status === 'failed'
+          ? el('span', { class: 'badge badge-bad' }, t('badge_no_answer'))
+          : el('span', { class: 'badge badge-pend' }, t('badge_pending'));
+      const result = r.status === 'answered'
+        ? el('div', { class: 'inf-result' }, ...clampedText(r.answer))
+        : el('div', { class: 'inf-result' }, el('span', { class: 'hint' },
+          r.status === 'failed'
+            ? (r.note ? t('inf_failed_note', r.note) : t('inf_failed_timeout'))
+            : t('inf_waiting', r.recipients)));
+      return el('div', { class: 'inf-item' },
+        el('div', { class: 'inf-item-head' },
+          txLink(r.id),
+          el('span', { class: 'badge badge-model' }, modelName(r.model)),
+          badge),
+        r.origin ? el('div', { class: 'hint', style: 'text-align:left' }, t('inf_via_site', r.origin)) : null,
+        el('div', { class: 'inf-prompt' }, r.prompt),
+        result);
+    }));
+  }
+
+  async function loadMine() {
+    mine = await loadRequests(wallet);
+    renderMine();
+  }
+
+  /** Open the answers of pending sealed requests as they land on-chain. */
+  async function pollMine() {
+    if (polling) return;
+    polling = true;
+    try {
+      for (const r of mine.filter((x) => x.status === 'pending')) {
+        const patch = await checkAnswer(wallet, r);
+        if (patch) mine = await updateRequest(wallet, r.id, patch);
+      }
+      renderMine();
+    } finally {
+      polling = false;
+    }
+  }
+
   function resultNode(item) {
     const r = item.result;
     if (!r) return null;
     const box = el('div', { class: 'inf-result' });
-    const renderText = (text) => {
-      const long = text.length > 400;
-      const body = el('div', { class: `inf-result-text${long ? ' clamped' : ''}` }, text);
-      const kids = [body];
-      if (long) {
-        const toggle = el('button', { class: 'link-btn', style: 'font-size:10px;margin-top:2px' }, t('inf_show_more'));
-        toggle.addEventListener('click', () => {
-          const clamped = body.classList.toggle('clamped');
-          toggle.textContent = clamped ? t('inf_show_more') : t('inf_show_less');
-        });
-        kids.push(toggle);
-      }
-      box.replaceChildren(...kids);
-    };
-    if (/^Qm/.test(r) && r.length === 46) {
+    if (item.sealed) {
+      // `result` is only the multihash of the sealed body, not an IPFS pin.
+      const own = mine.find((m) => m.id === item.tx_id && m.status === 'answered');
+      if (own) box.replaceChildren(...clampedText(own.answer));
+      else box.replaceChildren(el('span', { class: 'hint' }, t('inf_sealed_answer')));
+    } else if (/^Qm/.test(r) && r.length === 46) {
       box.replaceChildren(el('span', { class: 'hint' }, t('inf_fetching')));
       if (!ipfsCache.has(r)) ipfsCache.set(r, api.ipfsText(r));
       Promise.resolve(ipfsCache.get(r)).then((text) => {
         ipfsCache.set(r, text);
-        renderText(text);
+        box.replaceChildren(...clampedText(text));
       }).catch(() => {
         box.replaceChildren(el('a', {
           href: `${API_BASE}/ipfs/${r}`, target: '_blank', rel: 'noreferrer', class: 'hint',
         }, `${r.slice(0, 12)}…${r.slice(-6)} ↗`));
       });
     } else {
-      renderText(item.result_text || r);
+      box.replaceChildren(...clampedText(item.result_text || r));
     }
     return box;
+  }
+
+  function promptNode(item) {
+    if (!item.sealed) return el('div', { class: 'inf-prompt' }, item.prompt);
+    const own = mine.find((m) => m.id === item.tx_id);
+    if (own) return el('div', { class: 'inf-prompt' }, own.prompt);
+    return el('div', { class: 'inf-prompt hint', style: 'text-align:left' },
+      t('inf_sealed_prompt', item.sealed_recipients ?? '?'));
   }
 
   async function loadFeed() {
@@ -782,17 +920,12 @@ function renderInference() {
             : item.result
               ? el('span', { class: 'badge badge-ok' }, t('badge_responded'))
               : el('span', { class: 'badge badge-pend' }, t('badge_pending'));
-        // item.model is normally the key; fall back to id-hex resolution when
-        // the API host returned an unrecognised (raw) model id.
-        const modelName = (getModel(item.model) ?? getModelByIdHex(item.model))?.name ?? item.model;
         return el('div', { class: 'inf-item' },
           el('div', { class: 'inf-item-head' },
-            el('a', {
-              href: `${API_BASE}/tx/${item.tx_id}`, target: '_blank', rel: 'noreferrer',
-            }, `${item.tx_id.slice(0, 10)}…`),
-            el('span', { class: 'badge badge-model' }, modelName),
+            txLink(item.tx_id),
+            el('span', { class: 'badge badge-model' }, modelName(item.model)),
             badge),
-          el('div', { class: 'inf-prompt' }, item.prompt),
+          promptNode(item),
           resultNode(item));
       }));
     } catch {
@@ -808,6 +941,12 @@ function renderInference() {
     }
     refreshEstimate();
   }
+
+  mineCard.append(
+    el('div', { class: 'tx-head' },
+      el('span', { class: 'label', style: 'margin:0' }, t('inf_mine_title')),
+      el('span', { class: 'tx-count' }, t('inf_mine_private'))),
+    mineList);
 
   show(
     el('div', { class: 'back-row' },
@@ -827,6 +966,7 @@ function renderInference() {
       el('div', { class: 'field' },
         el('span', { class: 'label' }, t('label_prompt')),
         promptInput),
+      privacyLine,
       el('div', { class: 'slider-row' },
         el('span', { class: 'tx-count', style: 'white-space:nowrap' }, t('inf_max_tokens_prefix'), tokensVal),
         tokensSlider,
@@ -838,25 +978,28 @@ function renderInference() {
         el('div', { class: 'field', style: 'flex:1;justify-content:flex-end' },
           totalLine))
     ),
+    eraBox,
     statusBox,
     submit,
+    mineCard,
     el('div', { class: 'card' },
       el('div', { class: 'tx-head' },
         el('span', { class: 'label', style: 'margin:0' }, t('inf_live_feed')),
         el('span', { class: 'tx-count' }, t('inf_autorefresh'))),
       feedList
     ),
-    el('p', { class: 'hint' },
-      t('inf_footer'))
+    footer
   );
 
-  refreshEstimate();
+  loadEra();
   loadOverviewData();
   loadCapabilities();
-  loadFeed();
+  loadMine().then(pollMine).then(loadFeed);
   state.refreshTimer = setInterval(() => {
+    loadEra();
     loadFeed();
     loadCapabilities();
+    pollMine();
   }, 5000);
 }
 

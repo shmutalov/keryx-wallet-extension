@@ -4,6 +4,7 @@ import { deriveWallet, addressToScriptPublicKey, hexToBytes } from '../src/lib/k
 import {
   buildTransferTx,
   buildInferenceTx,
+  selectInferenceUtxos,
   buildInferencePayload,
   escrowScriptPublicKey,
   INFERENCE_VAULT_SCRIPT_HEX,
@@ -19,7 +20,30 @@ import {
   SIGHASH_SINGLE,
   SIGHASH_ANYONECANPAY,
 } from '../src/lib/tx.js';
-import { inferenceRewardSompi, getModel } from '../src/lib/models.js';
+import {
+  inferenceRewardSompi,
+  getModel,
+  selectableModels,
+  H14_ACTIVATION_DAA,
+} from '../src/lib/models.js';
+import {
+  cohortSeed,
+  cohortRank,
+  deriveRootKey,
+  isSealed,
+  maxPrivatePromptLen,
+  maxRequestPayloadLen,
+  openOwnPrompt,
+  openRequest,
+  openResponse,
+  requestHeader,
+  sealRecipients,
+  sealRequest,
+  sealResponse,
+  toHex,
+} from '../src/lib/private.js';
+import { inferenceEra, H14_SWITCH_MARGIN_DAA } from '../src/lib/inference.js';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 let failures = 0;
 let n = 0;
@@ -115,7 +139,7 @@ const throws = (fn, match) => {
     fn();
     return false;
   } catch (e) {
-    return String(e).includes(match);
+    return match === undefined || String(e).includes(match);
   }
 };
 check('insufficient funds throws', throws(() => buildTransferTx({
@@ -221,6 +245,123 @@ check('AiRequest without a reward vault is refused', throws(() => buildInference
   privateKeyHex: sender.privateKeyHex,
   payloadHex,
 }), 'reward vault'));
+
+check('plaintext prompt over the pre-H14 4 KiB payload cap is refused',
+  throws(() => buildInferencePayload('x'.repeat(4045), model.idHex, 256, reward), 'Prompt too long') &&
+  !throws(() => buildInferencePayload('x'.repeat(4044), model.idHex, 256, reward)));
+
+// --- H14 pricing + lineup (keryx-node INFERENCE_REWARD_MINIMUMS_FLAT, POM_TIERS_H14) ---
+check('H14 reward is the flat model price, whatever max_tokens',
+  inferenceRewardSompi('gemma-4-12b-abliterated', 4096, true) === 150000000 &&
+  inferenceRewardSompi('qwen3.5-9b-abliterated', 64, true) === 50000000 &&
+  inferenceRewardSompi('qwen3.8-27b', 256, true) === 200000000 &&
+  inferenceRewardSompi('kimi-linear-48b', 256, true) === 250000000);
+check('Qwen3.6-27B is pre-H14 only, Qwen3.8-27B H14 only',
+  throws(() => inferenceRewardSompi('qwen3.6-27b', 256, true)) && throws(() => inferenceRewardSompi('qwen3.8-27b', 256, false)));
+const tiersOf = (h14) => selectableModels(h14).map((m) => `${m.tier}:${m.key}`).join(',');
+check('lineups: 5 tiers each side of the gate, only tier 3 differs',
+  tiersOf(false) === '0:qwen3.5-9b-abliterated,1:glm-4-9b-0414,2:gemma-4-12b-abliterated,3:qwen3.6-27b,4:kimi-linear-48b' &&
+  tiersOf(true) === '0:qwen3.5-9b-abliterated,1:glm-4-9b-0414,2:gemma-4-12b-abliterated,3:qwen3.8-27b,4:kimi-linear-48b');
+check('Qwen3.8-27B model id (keryx-node QWEN3_8_27B_MODEL_ID)',
+  getModel('qwen3.8-27b').idHex === '73740b443bdc00afda5fa34eb9999d3fea77dcc3f6de238fab701394cdc96fb3');
+check('era: plaintext, then a no-send margin, then sealed at H14_ACTIVATION_DAA',
+  inferenceEra(H14_ACTIVATION_DAA - H14_SWITCH_MARGIN_DAA - 1) === 'plain' &&
+  inferenceEra(H14_ACTIVATION_DAA - H14_SWITCH_MARGIN_DAA) === 'switching' &&
+  inferenceEra(H14_ACTIVATION_DAA - 1) === 'switching' &&
+  inferenceEra(H14_ACTIVATION_DAA) === 'sealed');
+
+// --- H14 private inference envelopes, pinned to vectors from keryx-node's own
+// inference/src/private.rs (seeded rng) and keryx-labs.com's /infer module ---
+const ESCROW = ['11', '22', '33'].map((b) => b.repeat(32));
+const ESCROW_PUB = [
+  '4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa',
+  '466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27',
+  '3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1',
+];
+// seal_request_with_rng(gemma, 256, 1.5 KRX, 0.3 KRX, "vector prompt", [pub0, pub1], StdRng(7))
+const NODE_REQUEST = hexToBytes('399984045600f7d58d1b2cf01e6a4bf466fa15c7ac31bd0dd1a71e003b617cc60001000080d1f0080000000080c3c90100000000004b58500102ad4063e56d12d439afe71e1837f1ce9c435c8b2a9c959b339f6e8e003e7150d3b621629ead61c245e06bb0bc02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27aabdb06ee8345e31bf9f9898d2930d99fd276120ef40e474ff48a3fbbc7e1c57bb634d4ad730412af408bd481ff198424f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aae313f16b0353c79b31fcd28ab79564e3c5f9f6a651ff9c2215b56724a8f486862c713d8516d3ee4045795b69387f4faa0bd1222917019e5806b4b59ed611243dc35550955b9de8457ae0c06f53');
+const NODE_ROOT = hexToBytes('befba86ae9e0c207865f7e24e8349d4ecdbc8b0f4632842499a0dfa60568e28a');
+// seal_response_with_rng(NODE_ROOT, ab×32, pub1, "vector answer", StdRng(3))
+const NODE_BODY = hexToBytes('004b585001ecd9c4a53ea15f18447b08fb48318320b5b9b8062bc2d149dbcfd33862fa57e9b31d3ebe95ff5bf451');
+check('escrow keys used by the vectors (the first has an odd-Y full key)', ESCROW.every((sk, i) =>
+  toHex(secp256k1.getPublicKey(hexToBytes(sk), true).subarray(1)) === ESCROW_PUB[i]) &&
+  secp256k1.getPublicKey(hexToBytes(ESCROW[0]), true)[0] === 0x03);
+check('requester opens its own node-sealed prompt', openOwnPrompt(NODE_ROOT, NODE_REQUEST) === 'vector prompt');
+check('both named miners open the node-sealed request and recover the root key', [0, 1].every((i) => {
+  const opened = openRequest(NODE_REQUEST, ESCROW[i]);
+  return opened.prompt === 'vector prompt' && toHex(opened.rootKey) === toHex(NODE_ROOT);
+}));
+check('a miner the request does not name cannot open it', throws(() => openRequest(NODE_REQUEST, ESCROW[2]), 'not among'));
+check('node-sealed answer opens for its request id and responder',
+  openResponse(NODE_ROOT, 'ab'.repeat(32), ESCROW_PUB[1], NODE_BODY) === 'vector answer');
+check('the answer is bound to responder key and request id',
+  throws(() => openResponse(NODE_ROOT, 'ab'.repeat(32), ESCROW_PUB[0], NODE_BODY)) &&
+  throws(() => openResponse(NODE_ROOT, 'ac'.repeat(32), ESCROW_PUB[1], NODE_BODY)));
+check('a plaintext "could not open" note is not an envelope',
+  throws(() => openResponse(NODE_ROOT, 'ab'.repeat(32), ESCROW_PUB[1], new TextEncoder().encode('could not open')), 'Not a private'));
+
+const vSeed = cohortSeed('5e'.repeat(32), 3);
+check('cohort seed = txid ‖ u32le index', toHex(vSeed) === '5e'.repeat(32) + '03000000');
+check('root key derivation matches keryx-labs.com (HKDF "KeryxChatRootKeyV1")',
+  toHex(deriveRootKey('01'.repeat(32), vSeed)) === '3c21c6e93a7af5d47b109517e033fc1bd1c94bf2ea112667d7f2c34ae35888ec');
+check('cohort rank matches keryx-node private_cohort_rank (blake2b-256)',
+  toHex(cohortRank(vSeed, hexToBytes(ESCROW_PUB[0]))) === 'b08da7922cf9e3adb67352880b76dc589d33f3db51eee917e35c4c0d3f85e1f5' &&
+  toHex(cohortRank(vSeed, hexToBytes(ESCROW_PUB[2]))) === 'd35581a98168c30b03b29652638a8390291d6fd1e06724b0d4806a5f588ecb50');
+check('recipients: cohort + window extras, deduplicated, ascending',
+  JSON.stringify(sealRecipients(vSeed, [ESCROW_PUB[0], ESCROW_PUB[1].toUpperCase(), ESCROW_PUB[0]], ESCROW_PUB)) ===
+  JSON.stringify([ESCROW_PUB[2], ESCROW_PUB[1], ESCROW_PUB[0]]));
+const many = Array.from({ length: 140 }, () => toHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true).subarray(1)));
+const capped = sealRecipients(vSeed, many, [ESCROW_PUB[0]]);
+const lowest = [...many].sort((a, b) => Buffer.compare(cohortRank(vSeed, hexToBytes(a)), cohortRank(vSeed, hexToBytes(b)))).slice(0, 128).sort();
+check('a cohort above 128 is cut to its 128 lowest ranks, window extras dropped',
+  capped.length === 128 && JSON.stringify(capped) === JSON.stringify(lowest) && !capped.includes(ESCROW_PUB[0]));
+check('prompt caps match keryx-node max_private_prompt_len (64 KiB payload)',
+  maxPrivatePromptLen(1) === 65337 && maxPrivatePromptLen(45) === 61817 && maxPrivatePromptLen(128) === 55177);
+
+const myRoot = deriveRootKey(sender.privateKeyHex, vSeed);
+const sealedHex = sealRequest({
+  modelIdHex: getModel('qwen3.8-27b').idHex, maxTokens: 512, rewardSompi: 200000000, priorityFeeSompi: MIN_FEE_SOMPI,
+  prompt: 'Private question ✓', recipientsHex: ESCROW_PUB, rootKey: myRoot,
+});
+const sealedBytes = hexToBytes(sealedHex);
+check('sealed payload: the 52-byte header stays public, then the envelope marker',
+  sealedHex.startsWith(toHex(requestHeader(getModel('qwen3.8-27b').idHex, 512, 200000000, MIN_FEE_SOMPI))) &&
+  isSealed(sealedBytes.subarray(52)) && sealedBytes[56] === 1 && sealedBytes[102] === 3);
+check('sealed payload never carries the prompt in clear',
+  !sealedHex.includes(Buffer.from('Private question', 'utf8').toString('hex')));
+check('every recipient (incl. odd-Y keys) opens the wallet-sealed request', ESCROW.every((sk) => {
+  const opened = openRequest(sealedBytes, sk);
+  return opened.prompt === 'Private question ✓' && toHex(opened.rootKey) === toHex(myRoot);
+}));
+check('miner-sealed answer round-trips to the requester', openResponse(myRoot, 'cd'.repeat(32), ESCROW_PUB[2],
+  sealResponse(openRequest(sealedBytes, ESCROW[2]).rootKey, 'cd'.repeat(32), ESCROW_PUB[2], 'Answer ✓')) === 'Answer ✓');
+check('tampered header (re-priced request) fails to open',
+  throws(() => openRequest(Uint8Array.from(sealedBytes, (b, i) => (i === 40 ? b ^ 1 : b)), ESCROW[0])));
+check('sealing refuses no recipients, bad keys and oversized prompts',
+  throws(() => sealRequest({ modelIdHex: model.idHex, maxTokens: 1, rewardSompi: 1, priorityFeeSompi: 1, prompt: 'p', recipientsHex: [], rootKey: myRoot }), 'No recipients') &&
+  throws(() => sealRequest({ modelIdHex: model.idHex, maxTokens: 1, rewardSompi: 1, priorityFeeSompi: 1, prompt: 'p', recipientsHex: ['ff'.repeat(32)], rootKey: myRoot }), 'Invalid escrow key') &&
+  throws(() => sealRequest({ modelIdHex: model.idHex, maxTokens: 1, rewardSompi: 1, priorityFeeSompi: 1, prompt: 'x'.repeat(65338), recipientsHex: [ESCROW_PUB[0]], rootKey: myRoot }), 'does not fit'));
+
+// --- sealed AiRequest tx: inputs chosen first (the first seeds the cohort), order kept ---
+const flatReward = inferenceRewardSompi('gemma-4-12b-abliterated', 256, true);
+const picked = selectInferenceUtxos({
+  utxos: [utxo('b', 2_00000000), utxo('a', 5_00000000)], feeSompi: MIN_FEE_SOMPI, rewardSompi: flatReward, currentDaaScore: daa,
+});
+const sealedTx = buildInferenceTx({
+  selectedUtxos: picked, changeAddress: sender.address, feeSompi: MIN_FEE_SOMPI, privateKeyHex: sender.privateKeyHex,
+  currentDaaScore: daa, payloadHex: sealedHex, rewardSompi: flatReward,
+});
+check('largest UTXO is the first input (cohort seed) and the built tx keeps it first',
+  picked[0].transaction_id === 'a'.repeat(64) && sealedTx.tx.inputs[0].transaction_id === picked[0].transaction_id);
+check('sealed tx: vault at outputs[1] worth the flat reward, payload carried verbatim',
+  sealedTx.tx.outputs[1].amount === flatReward && sealedTx.tx.outputs[1].script_public_key === INFERENCE_VAULT_SCRIPT_HEX &&
+  sealedTx.tx.payload === sealedHex);
+check('payload above the 64 KiB mass budget is refused', throws(() => buildInferenceTx({
+  selectedUtxos: picked, changeAddress: sender.address, feeSompi: MIN_FEE_SOMPI, privateKeyHex: sender.privateKeyHex,
+  payloadHex: '00'.repeat(65537), rewardSompi: flatReward,
+}), 'mass limit'));
+check('payload budget shrinks with inputs (compute mass: 1000 per sig-op)',
+  maxRequestPayloadLen(1) === 65536 && maxRequestPayloadLen(40) < 65536);
 
 // --- sighash types (Kaspa reused-values rules; `unsigned` has 2 inputs, 2 outputs) ---
 const eq = (a, b) => Buffer.compare(a, b) === 0;

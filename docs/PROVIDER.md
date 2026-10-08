@@ -52,19 +52,30 @@ x-only key from `getPublicKey()`.
 
 ```js
 const txid = await window.keryx.submitInference({
-  model: 'glm-4-9b-0414',     // registry key
+  model: 'glm-4-9b-0414',     // registry key of the current lineup
   prompt: 'What is Keryx?',
-  maxTokens: 256,             // 1..4096, reward surcharge per 64
+  maxTokens: 256,             // 1..4096
   priorityFeeSompi: 30000000, // optional, floored at 0.3 KRX
 });
 ```
 
-The wallet computes the reward (model base + token surcharge), builds the
-AiRequest transaction — the reward locked in the keyless `OP_RETURN "aivault"`
-vault at `outputs[1]`, as consensus requires since the H8 hardfork — and shows
-the full cost in the approval window. The reward is minted to the miner that
-serves the request, or burns if none does, so the wallet refuses to submit when
-no miner currently serves the chosen model.
+The wallet computes the reward, builds the AiRequest transaction — the reward
+locked in the keyless `OP_RETURN "aivault"` vault at `outputs[1]`, as
+consensus requires since the H8 hardfork — and shows the full cost in the
+approval window. The reward is minted to the miner that serves the request, or
+burns if none does, so the wallet refuses to submit when no miner currently
+serves the chosen model.
+
+**From the H14 hardfork (mainnet DAA 121,985,000) inference is private.** The
+wallet seals the prompt to the miners of the model's tier (only they can read
+it), and each miner seals its answer back to the wallet: the answer is readable
+only in the wallet, under *Your private requests* on its AI Inference page — the
+dApp gets the transaction id, not the answer. The reward becomes a fixed price
+per model (`maxTokens` no longer changes it) and tier 3 switches from
+`qwen3.6-27b` to `qwen3.8-27b`; a model the network does not serve on the
+current side of the gate is refused as an invalid request. Within about a minute
+of the gate the wallet refuses inference requests altogether (a request could
+land on either side of it).
 
 ## `signTx` — arbitrary transactions, HTLC claim & refund
 

@@ -164,8 +164,19 @@ export const api = {
   // [{ model, model_id_hex, miner_count, last_seen_daa, miner_pubkeys: [hex32] }]
   capabilities: () => get('/api/v1/capabilities'),
   // [{ tx_id, model, prompt, max_tokens, inference_reward, priority_fee, daa_score,
-  //    block_hash, payload_prefix, result, result_text, result_block_hash }]
+  //    block_hash, payload_prefix, result, result_text, result_block_hash,
+  //    sealed, sealed_recipients }]
+  // From H14 a request is sealed: prompt "" and `result` only the multihash of
+  // the sealed answer, not an IPFS pin.
   inferences: (limit = 20, offset = 0) => get(`/api/v1/infer?limit=${limit}&offset=${offset}`),
+  // One request: { tx_id, model, prompt, status: 'pending'|'completed', sealed,
+  //   sealed_recipients, sealed_responses: [{ responder_pubkey, body (hex) }], result_cid, … }
+  // `sealed_responses` (oldest first) carry the H14 answers, sealed to the requester. Needs the indexer.
+  inferenceResult: (txId) => get(`/api/v1/inference/${encodeURIComponent(txId)}`),
+  // Miners an H14 request is sealed to: { virtual_daa_score, window_daa, cohort: [...], window: [...] },
+  // each { tier, model, model_id, identity, escrow_pubkey }. `cohort` = the eligibility cohort the
+  // mempool checks coverage against; `window` = the providers of the last `window_daa`.
+  aiProviders: () => get('/api/v1/ai/providers'),
   // [{ tx_id, request_hash_hex, fraud_proven }]
   challenges: (limit = 50) => get(`/api/v1/challenges?limit=${limit}`),
   // inference results that are IPFS CIDs resolve to text via the same host

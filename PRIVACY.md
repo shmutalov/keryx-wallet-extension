@@ -1,6 +1,6 @@
 # Privacy Policy — Keryx Wallet
 
-**Effective date: July 6, 2026**
+**Effective date: October 8, 2026**
 
 Keryx Wallet is a browser extension for the Keryx Network (KRX). It is designed so that your data never leaves your device.
 
@@ -16,6 +16,7 @@ The extension stores the following **only in your browser's local extension stor
 - Your address book (names and Keryx addresses you save) and a short list of recently used destination addresses.
 - Interface state such as the selected account.
 - The list of websites you have explicitly connected to the wallet (see "Website access" below), with the account you granted each one.
+- Your private AI inference requests (the prompt, the decrypted answer and the transaction reference), so their answers can be shown when you reopen the wallet — encrypted with AES-256-GCM under a key derived from the account's private key, readable only while the wallet is unlocked.
 
 While the wallet is unlocked, decrypted keys are held only in memory-backed session storage and are erased after 15 minutes of inactivity, when you lock the wallet, or when the browser closes. Choosing "Reset wallet" deletes all stored data permanently.
 
@@ -25,8 +26,9 @@ The extension communicates with exactly one API host: `keryx-labs.com` (the publ
 
 - Reading public blockchain data (balances, UTXOs, transaction history, network status, market price) for the addresses in your wallet.
 - Broadcasting transactions that you created and signed locally.
+- For AI inference: reading the public list of miners serving each model, and fetching the encrypted answers to your requests.
 
-Like any blockchain query service, the operator of the API host you use can technically observe which addresses your installation looks up. No private keys, seed phrases, passwords, or personal information are ever transmitted.
+Like any blockchain query service, the operator of the API host you use can technically observe which addresses your installation looks up. No private keys, seed phrases, passwords, or personal information are ever transmitted. Since the Keryx H14 network upgrade, AI inference prompts are encrypted in your browser to the miners serving the chosen model before they are broadcast, and answers are encrypted to your wallet and decrypted locally — neither the API host nor anyone else on the network can read them.
 
 ## Website access (`window.keryx` provider)
 

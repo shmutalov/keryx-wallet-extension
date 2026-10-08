@@ -8,6 +8,10 @@
 // Keryx API are SKIPPED with a warning when the node is unreachable.
 import { JSDOM } from 'jsdom';
 import { readFileSync, readdirSync } from 'fs';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { hexToBytes } from '../src/lib/keryx.js';
+import { openRequest, sealResponse, toHex } from '../src/lib/private.js';
+import { H14_ACTIVATION_DAA } from '../src/lib/models.js';
 
 const dom = new JSDOM('<!DOCTYPE html><html><body><div id="app"></div></body></html>', {
   url: 'chrome-extension://test/popup.html',
@@ -89,9 +93,29 @@ const MOCK_INFERENCES = [
 ];
 let mockBalance = false;
 let broadcastBody = null;
+let mockDaa = null; // set: /info answers with this DAA (which side of the H14 gate), else live
+let mockInferences = MOCK_INFERENCES;
+let mockProviders = null; // /ai/providers body
+let mockInferenceResult = null; // /inference/{tx_id} body, null = 404 (not indexed yet)
+const ipfsCalls = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   const u = String(url);
+  if (mockDaa !== null && u.endsWith('/api/v1/info')) {
+    return new Response(JSON.stringify({ network: 'keryx-mainnet', last_daa_score: mockDaa }), { status: 200 });
+  }
+  if (u.endsWith('/ai/providers')) {
+    return new Response(JSON.stringify(mockProviders ?? { cohort: [], window: [] }), { status: 200 });
+  }
+  if (u.includes('/api/v1/inference/')) {
+    return mockInferenceResult
+      ? new Response(JSON.stringify(mockInferenceResult), { status: 200 })
+      : new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+  }
+  if (u.includes('/ipfs/')) {
+    ipfsCalls.push(u);
+    return new Response('not found', { status: 404 });
+  }
   if (u.includes('/utxos?')) {
     return new Response(JSON.stringify(MOCK_UTXOS), { status: 200 });
   }
@@ -103,7 +127,7 @@ globalThis.fetch = async (url, init) => {
     return new Response(JSON.stringify(MOCK_CAPABILITIES), { status: 200 });
   }
   if (u.includes('/infer?')) {
-    return new Response(JSON.stringify(MOCK_INFERENCES), { status: 200 });
+    return new Response(JSON.stringify(mockInferences), { status: 200 });
   }
   if (u.includes('/challenges?')) {
     return new Response(JSON.stringify([]), { status: 200 });
@@ -275,14 +299,19 @@ await until(() => !!byId('lock-btn'), 10);
 
 // --- AI inference: dedicated page, cost math, vaulted AiRequest broadcast (H8 reward routing) ---
 mockBalance = true;
+mockDaa = H14_ACTIVATION_DAA - 1_000_000; // before the H14 gate: plaintext prompts, token surcharge
+const modelOptions = () => [...byId('inf-model').querySelectorAll('option')].map((o) => o.value);
 byId('inference-btn').click();
 await sleep(100);
 check('15l', 'inference page opens', !!byId('inf-model') && !!byId('inf-submit') && !!byId('inf-prompt'));
+await until(() => modelOptions().length > 0, 20);
 check('15m', 'model picker lists 5 models, gemma-4-12b default',
-  byId('inf-model').querySelectorAll('option').length === 5 && byId('inf-model').value === 'gemma-4-12b-abliterated');
+  modelOptions().length === 5 && byId('inf-model').value === 'gemma-4-12b-abliterated');
 check('15m2', 'retired models (exaone, qwen3-8b, mistral-7b) not offered',
-  ![...byId('inf-model').querySelectorAll('option')].some((o) =>
-    ['exaone-4.0-1.2b', 'qwen3-8b-abliterated', 'mistral-7b-v0.3'].includes(o.value)));
+  !modelOptions().some((k) => ['exaone-4.0-1.2b', 'qwen3-8b-abliterated', 'mistral-7b-v0.3'].includes(k)));
+check('15m3', 'before H14: tier 3 is Qwen3.6-27B, no private-requests card',
+  modelOptions().includes('qwen3.6-27b') && !modelOptions().includes('qwen3.8-27b') &&
+  byId('inf-mine').parentElement.style.display === 'none' && byId('inf-privacy').style.display === 'none');
 await until(() => byId('inf-miners')?.textContent.includes('3 active miners'), 20);
 check('15n', 'live miner count shown from capabilities', byId('inf-miners').textContent.includes('3 active miners'));
 await until(() => app().textContent.includes('Balance: 100 KRX'), 20);
@@ -312,6 +341,107 @@ check('15s', 'live feed renders responded + pending items with badges',
   byId('inf-feed').textContent.includes('✓ RESPONDED') &&
   byId('inf-feed').textContent.includes('⏳ PENDING') &&
   byId('inf-feed').textContent.includes('The answer is 42.'));
+
+// --- H14 private inference: the prompt is sealed to the tier's miners, the
+// request is kept encrypted per account, the miner's sealed answer is opened.
+// The test plays the miners with the responder side of private.js. ---
+const reopenInference = async () => {
+  app().querySelector('.link-btn').click(); // back to dashboard
+  await until(() => !!byId('inference-btn'), 10);
+  byId('inference-btn').click();
+  await until(() => !!byId('inf-model'), 10);
+};
+const ESCROW_SK = ['11', '22', '33', '44'].map((b) => b.repeat(32));
+const escrowPub = (sk) => toHex(secp256k1.getPublicKey(hexToBytes(sk), true).subarray(1));
+const [PUB_A, PUB_B, PUB_C, PUB_GLM] = ESCROW_SK.map(escrowPub);
+const provider = (pub, modelId, tier) => ({ tier, model: 'x', model_id: modelId, identity: 'ab'.repeat(32), escrow_pubkey: pub });
+const GLM_ID = 'fa2f13be0850e26c5ce86c7ac79da85e300c1da8b3290f9a18d47105f1f2140a';
+mockProviders = {
+  virtual_daa_score: H14_ACTIVATION_DAA + 5000,
+  window_daa: 18000,
+  // gemma's current cohort is A+B; C served it in the last 30 min; the GLM miner must never be named
+  cohort: [provider(PUB_A, DEFAULT_MODEL_ID, 2), provider(PUB_B, DEFAULT_MODEL_ID, 2), provider(PUB_GLM, GLM_ID, 1)],
+  window: [provider(PUB_A, DEFAULT_MODEL_ID, 2), provider(PUB_B, DEFAULT_MODEL_ID, 2), provider(PUB_C, DEFAULT_MODEL_ID, 2),
+    provider(PUB_GLM, GLM_ID, 1)],
+};
+const OWN_TX = 'e2e0'.repeat(16); // what the mocked broadcast answers
+const STRANGER = { tx_id: 'cf'.repeat(32), model: 'gemma-4-12b-abliterated', prompt: '', sealed: true, sealed_recipients: 45,
+  max_tokens: 256, inference_reward: 150000000, priority_fee: 30000000, daa_score: H14_ACTIVATION_DAA + 10,
+  block_hash: 'ef'.repeat(32), payload_prefix: 'cf'.repeat(8), result: 'Qm' + 'Z'.repeat(44), result_text: null };
+mockInferences = [STRANGER];
+mockDaa = H14_ACTIVATION_DAA + 5000;
+await reopenInference();
+await until(() => modelOptions().includes('qwen3.8-27b'), 20);
+check('15t', 'from H14: tier 3 is Qwen3.8-27B, flat prices, gemma kept as default',
+  modelOptions().length === 5 && !modelOptions().includes('qwen3.6-27b') &&
+  byId('inf-model').value === 'gemma-4-12b-abliterated' &&
+  byId('inf-model').selectedOptions[0].textContent.endsWith('· 1.5 KRX'));
+check('15u', 'privacy notice + empty "Your private requests" card shown',
+  byId('inf-privacy').style.display === '' && byId('inf-mine').parentElement.style.display === '' &&
+  byId('inf-mine').textContent.includes('No private requests'));
+await until(() => byId('inf-feed')?.textContent.includes('Sealed prompt'), 20);
+check('15v', 'a stranger\'s sealed request shows as sealed, its answer is never fetched from IPFS',
+  byId('inf-feed').textContent.includes('🔒 Sealed prompt — readable only by the requester and 45 miners') &&
+  byId('inf-feed').textContent.includes('🔒 Sealed answer') && ipfsCalls.length === 0);
+byId('inf-prompt').value = 'Secret question';
+fire(byId('inf-prompt'), 'input');
+await sleep(50);
+check('15w', 'H14 cost: flat 1.5 reward + 0.3 fee = 1.8 KRX, whatever max_tokens',
+  byId('inf-total').textContent.includes('Total: 1.8 KRX (1.5 reward + 0.3 fee)'));
+broadcastBody = null;
+byId('inf-submit').click();
+await until(() => byId('inf-status')?.className === 'success-box', 30);
+check('15x', 'sealed request submitted to the 3 gemma miners', byId('inf-status').textContent.includes('Sealed to 3 miners'));
+const sealedPayload = hexToBytes(broadcastBody?.payload ?? '');
+const openedBy = (sk) => { try { return openRequest(sealedPayload, sk); } catch { return null; } };
+const minerView = openedBy(ESCROW_SK[2]);
+check('15y', 'broadcast: public header (flat reward), vault at outputs[1], prompt sealed',
+  broadcastBody?.payload?.startsWith(DEFAULT_MODEL_ID) &&
+  new DataView(sealedPayload.buffer).getBigUint64(36, true) === 150000000n &&
+  broadcastBody?.outputs?.[1]?.amount === 150000000 &&
+  broadcastBody?.outputs?.[1]?.script_public_key === '6a0761697661756c74' &&
+  !broadcastBody.payload.includes(Buffer.from('Secret question', 'utf8').toString('hex')));
+check('15z', 'cohort + window miners of the tier open the prompt; the other tier\'s miner cannot',
+  [0, 1, 2].every((i) => openedBy(ESCROW_SK[i])?.prompt === 'Secret question') && openedBy(ESCROW_SK[3]) === null &&
+  JSON.stringify(minerView?.recipients) === JSON.stringify([PUB_A, PUB_B, PUB_C].sort()));
+const recordKey = Object.keys(localStore).find((k) => k.startsWith('krx_inf.keryx:'));
+check('15aa', 'the request is kept per account, encrypted at rest (no plaintext prompt in storage)',
+  !!recordKey && !!localStore[recordKey]?.iv && !JSON.stringify(localStore[recordKey]).includes('Secret question'));
+await until(() => byId('inf-mine')?.textContent.includes('Secret question'), 20);
+check('15ab', 'own request listed as pending with its prompt',
+  byId('inf-mine').textContent.includes('Secret question') && byId('inf-mine').textContent.includes('⏳ PENDING') &&
+  byId('inf-mine').textContent.includes('Waiting for a sealed answer from 3 miners'));
+// Two miners answer: one could not open the request (plaintext note), one seals the answer.
+mockInferenceResult = {
+  tx_id: OWN_TX, status: 'completed', sealed: true, sealed_recipients: 3,
+  sealed_responses: [
+    { responder_pubkey: PUB_A, body: Buffer.from('could not open the request').toString('hex') },
+    { responder_pubkey: PUB_C, body: toHex(sealResponse(minerView.rootKey, OWN_TX, PUB_C, 'The secret answer.')) },
+  ],
+};
+mockInferences = [{ ...STRANGER, tx_id: OWN_TX, sealed_recipients: 3, result: 'Qm' + 'Y'.repeat(44) }, STRANGER];
+await until(() => byId('inf-mine')?.textContent.includes('The secret answer.'), 30);
+check('15ac', 'the sealed answer is decrypted (the unreadable note skipped)',
+  byId('inf-mine').textContent.includes('The secret answer.') && byId('inf-mine').textContent.includes('✓ RESPONDED'));
+await until(() => byId('inf-feed')?.textContent.includes('The secret answer.'), 20);
+check('15ad', 'own row in the live feed shows its own prompt and answer, still no IPFS fetch',
+  byId('inf-feed').textContent.includes('Secret question') && byId('inf-feed').textContent.includes('The secret answer.') &&
+  ipfsCalls.length === 0);
+mockInferenceResult = null;
+await reopenInference();
+await until(() => byId('inf-mine')?.textContent.includes('The secret answer.'), 20);
+check('15ae', 'answer persists across popup sessions (encrypted store)', byId('inf-mine').textContent.includes('The secret answer.'));
+// Right before the gate nothing may be sent: a request could land on either side of it.
+mockDaa = H14_ACTIVATION_DAA - 100;
+await reopenInference();
+await until(() => byId('inf-era')?.style.display === '', 20);
+byId('inf-prompt').value = 'Too close to the gate';
+fire(byId('inf-prompt'), 'input');
+await sleep(50);
+check('15af', 'within a minute of the H14 gate: notice shown, submit disabled',
+  byId('inf-era').textContent.includes('H14') && byId('inf-submit').disabled);
+mockDaa = null;
+mockInferences = MOCK_INFERENCES;
 mockBalance = false;
 
 app().querySelector('.link-btn').click(); // back to dashboard

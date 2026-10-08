@@ -119,6 +119,8 @@
 
     /**
      * Submit an AI inference request (AiRequest transaction with the reward vault).
+     * From the H14 hardfork the prompt is sealed to the model's miners and the
+     * answer is readable only in the wallet (AI Inference → Your private requests).
      * @param {{model: string, prompt: string, maxTokens?: number, priorityFeeSompi?: number}} opts
      * @returns {Promise<string>} transaction id
      */

@@ -7,6 +7,7 @@
 import { blake2b } from '@noble/hashes/blake2.js';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { addressToScriptPublicKey, hexToBytes, bytesToHex } from './keryx.js';
+import { AI_REQUEST_HEADER_LEN, MAX_AI_REQUEST_PAYLOAD_LEN, maxRequestPayloadLen } from './private.js';
 
 export const NATIVE_SUBNETWORK_ID = '0000000000000000000000000000000000000000';
 export const INFERENCE_SUBNETWORK_ID = '0300000000000000000000000000000000000000';
@@ -278,12 +279,18 @@ function signTransaction(unsigned, outputs, subnetworkId, payloadHex, privateKey
 // --- AI inference (AiRequest transactions) ------------------------------------
 
 /**
- * Binary AiRequest payload, hex-encoded:
+ * Binary AiRequest payload with a plaintext prompt, hex-encoded:
  * [0..32) model id, u32le max_tokens @32, u64le reward @36, u64le priority fee @44,
- * utf-8 prompt from 52.
+ * utf-8 prompt from 52. Valid only before H14 — from then on the prompt must be
+ * sealed (`sealRequest` in private.js).
  */
 export function buildInferencePayload(prompt, modelIdHex, maxTokens = 128, rewardSompi = 0, priorityFeeSompi = MIN_FEE_SOMPI) {
   const promptBytes = new TextEncoder().encode(prompt);
+  if (AI_REQUEST_HEADER_LEN + promptBytes.length > MAX_AI_REQUEST_PAYLOAD_LEN) {
+    throw new Error(
+      `Prompt too long: ${promptBytes.length} bytes (maximum ${MAX_AI_REQUEST_PAYLOAD_LEN - AI_REQUEST_HEADER_LEN})`
+    );
+  }
   const buf = new ArrayBuffer(52 + promptBytes.length);
   const view = new DataView(buf);
   const arr = new Uint8Array(buf);
@@ -326,31 +333,19 @@ export function escrowScriptPublicKey(pubkeyHex, lockBlocks = ESCROW_LOCK_BLOCKS
 }
 
 /**
- * Build and sign a payload-carrying transaction (AiRequest), faithful port of
- * the official wallet's advanced builder: outputs[0] = self-change,
- * outputs[1] = the keyless reward vault worth `rewardSompi` (the payload's
- * inference_reward). Consensus requires both outputs in that order, so the
- * change can never be folded into the fee: when the mass constraint leaves no
- * room for a change output the build fails with an actionable error instead
- * of broadcasting a transaction the node would reject.
+ * Inputs for an AiRequest: largest first, until the change clears the mass
+ * constraint. Separate from buildInferenceTx because a sealed (H14) request
+ * needs its first input before the payload exists — that outpoint seeds the
+ * miner cohort the prompt is sealed to, and the request's root key. The
+ * returned order is the input order.
  */
-export function buildInferenceTx({
-  utxos,
-  changeAddress,
-  feeSompi,
-  privateKeyHex,
-  currentDaaScore = 0,
-  payloadHex = '',
-  subnetworkId = INFERENCE_SUBNETWORK_ID,
-  rewardSompi, // vault amount (= inference_reward), required
-}) {
+export function selectInferenceUtxos({ utxos, feeSompi, rewardSompi, currentDaaScore = 0 }) {
   if (!Number.isSafeInteger(feeSompi) || feeSompi < 0) throw new Error('Invalid fee');
   if (!Number.isSafeInteger(rewardSompi) || rewardSompi <= 0) {
     throw new Error('Refusing to build an AiRequest without a reward vault output');
   }
-  const escrowAmount = rewardSompi;
-  const need = feeSompi + escrowAmount;
-  const escrowMass = 1e12 / escrowAmount;
+  const need = feeSompi + rewardSompi;
+  const escrowMass = 1e12 / rewardSompi;
 
   const candidates = spendableUtxos(utxos, currentDaaScore).sort(
     (a, b) => b.amount_sompi - a.amount_sompi
@@ -376,6 +371,48 @@ export function buildInferenceTx({
     const minChange = Math.ceil(1e12 / (MASS_LIMIT - escrowMass));
     throw new Error(
       `Insufficient funds: an AiRequest needs at least ${minChange} sompi of change on top of reward + fee (have ${change})`
+    );
+  }
+  return selected;
+}
+
+/**
+ * Build and sign a payload-carrying transaction (AiRequest), faithful port of
+ * the official wallet's advanced builder: outputs[0] = self-change,
+ * outputs[1] = the keyless reward vault worth `rewardSompi` (the payload's
+ * inference_reward). Consensus requires both outputs in that order, so the
+ * change can never be folded into the fee: when the mass constraint leaves no
+ * room for a change output the build fails with an actionable error instead
+ * of broadcasting a transaction the node would reject. `selectedUtxos` (from
+ * selectInferenceUtxos) pins the inputs and their order; without it the
+ * builder selects from `utxos` itself.
+ */
+export function buildInferenceTx({
+  utxos,
+  selectedUtxos,
+  changeAddress,
+  feeSompi,
+  privateKeyHex,
+  currentDaaScore = 0,
+  payloadHex = '',
+  subnetworkId = INFERENCE_SUBNETWORK_ID,
+  rewardSompi, // vault amount (= inference_reward), required
+}) {
+  if (!Number.isSafeInteger(feeSompi) || feeSompi < 0) throw new Error('Invalid fee');
+  if (!Number.isSafeInteger(rewardSompi) || rewardSompi <= 0) {
+    throw new Error('Refusing to build an AiRequest without a reward vault output');
+  }
+  const selected = selectedUtxos ?? selectInferenceUtxos({ utxos, feeSompi, rewardSompi, currentDaaScore });
+  if (!selected.length) throw new Error('No inputs selected');
+  const escrowAmount = rewardSompi;
+  const sum = safeAmount(selected.reduce((s, u) => s + u.amount_sompi, 0), 'total input sum');
+  const change = sum - feeSompi - escrowAmount;
+  if (change <= 0 || 1e12 / change + 1e12 / escrowAmount > MASS_LIMIT) {
+    throw new Error('Selected inputs leave no valid change output');
+  }
+  if (payloadHex.length / 2 > maxRequestPayloadLen(selected.length)) {
+    throw new Error(
+      `AiRequest payload of ${payloadHex.length / 2} bytes exceeds the mass limit for ${selected.length} inputs`
     );
   }
 
