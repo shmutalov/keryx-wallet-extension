@@ -1,6 +1,6 @@
 {
-  "ext_name": { "message": "Keryx 钱包" },
-  "ext_description": { "message": "Keryx Network (KRX) 的客户端钱包。创建或导入钱包并查看余额——密钥永不离开您的设备。" },
+  "ext_name": { "message": "Keryx 钱包 — KRX、dApp 与私密 AI" },
+  "ext_description": { "message": "Keryx（KRX）钱包：收发 KRX、向链上私密 AI 提问、连接 Keryx dApp。开源，密钥永不离开您的设备。" },
   "ext_action_title": { "message": "Keryx 钱包" },
 
   "btn_approve": { "message": "批准" },
@@ -151,6 +151,16 @@
   "settings_backup_label": { "message": "备份" },
   "settings_backup_btn": { "message": "⧉ 备份助记词" },
   "settings_backup_hint": { "message": "重新输入密码后显示助记词。" },
+  "settings_about_label": { "message": "关于与支持" },
+  "settings_rate": { "message": "★ 评价 Keryx 钱包" },
+  "settings_rate_hint": { "message": "简短的评价能帮助其他 Keryx 用户找到值得信赖的钱包。" },
+  "settings_buy_krx": { "message": "购买 KRX" },
+  "settings_mine_krx": { "message": "挖矿获取 KRX" },
+  "settings_source": { "message": "源代码" },
+  "settings_report_issue": { "message": "报告问题" },
+  "settings_third_party_hint": { "message": "交易所是第三方服务，与 Keryx 钱包无关。" },
+  "settings_donate_label": { "message": "支持开发" },
+  "settings_donate_hint": { "message": "KRX 打赏用于钱包维护，确保每次网络升级当天即可支持。" },
   "settings_danger_zone": { "message": "危险区域" },
   "settings_danger_hint": { "message": "重置将从此浏览器中删除所有账户和加密保险库。资金只能通过助记词恢复——继续前请确保每一条助记词都已备份。" },
 
@@ -262,5 +272,14 @@
   "dash_krx_address": { "message": "$1 — KRX 地址" },
   "dash_send": { "message": "发送 KRX →" },
   "dash_inference": { "message": "AI 推理 →" },
+  "title_receive": { "message": "接收（二维码）" },
+  "title_receive_krx": { "message": "接收 KRX" },
+  "receive_qr_label": { "message": "您的 KRX 地址二维码" },
+  "receive_mode_address": { "message": "地址" },
+  "receive_mode_phone": { "message": "手机" },
+  "receive_hint_address": { "message": "供钱包应用使用的标准地址二维码。iPhone 相机无法复制它，请切换到“手机”。" },
+  "receive_hint_phone": { "message": "在手机浏览器中打开 Keryx 区块浏览器上的此地址。长按地址即可复制。" },
+  "receive_only_krx": { "message": "请仅向此地址发送 Keryx 网络上的 KRX。" },
+  "receive_qr_label_phone": { "message": "链接到 Keryx 区块浏览器上您的地址的二维码" },
   "dash_consolidate": { "message": "整合——将在下一版本推出。" }
 }

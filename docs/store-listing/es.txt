@@ -1,0 +1,43 @@
+Billetera Keryx es una billetera de autocustodia para el navegador, hecha para la Keryx Network (KRX), la BlockDAG minada con GPU que ofrece inferencia de IA on-chain. Envía y recibe KRX, hazle preguntas privadas a una IA pagando en KRX y conéctate a dApps de Keryx. Tus claves nunca salen de tu dispositivo.
+
+¿POR QUÉ UNA EXTENSIÓN DEL NAVEGADOR?
+• A un clic desde cualquier pestaña: consulta tu saldo, copia tu dirección para los pagos del pool o los retiros de un exchange, y envía KRX.
+• Conéctate a dApps de Keryx: los sitios web solicitan pagos y firmas mediante el proveedor window.keryx, y tú apruebas cada solicitud en una ventana de la billetera.
+• Tus respuestas privadas de IA se quedan en tu billetera, cifradas por cuenta.
+
+FUNCIONES
+◈ Panel en vivo: saldo de KRX con estimación en USD, cantidad de UTXOs, estado de la red e historial completo de transacciones con enlaces al explorador
+➤ Enviar KRX: las transacciones se crean y se firman por completo en tu navegador (Schnorr BIP340, sighash al estilo de Kaspa) y luego se transmiten
+▣ Recibir KRX: tu dirección como código QR, lista para escanear o copiar
+✦ IA privada: elige un modelo (LLM de pesos abiertos como Qwen, GLM, Gemma y Kimi) y mira cuántos mineros lo sirven y cuánto cuesta antes de confirmar. Tu pregunta se cifra en el navegador para que solo los mineros que sirven ese modelo puedan leerla, y la respuesta vuelve cifrada para tu billetera. Actualizada para cada mejora de la red Keryx, incluida H15 (inferencia verificable).
+⇄ Conexiones con dApps: permisos por sitio, pagos, firma de mensajes, solicitudes de IA y firma avanzada de scripts (reclamo y reembolso HTLC). Cada solicitud muestra el sitio, los montos y las salidas antes de que la apruebes. Desconecta un sitio cuando quieras desde Configuración.
+⊕ Crear o importar: frase semilla BIP39 de 24 palabras con un paso de respaldo guiado, o restauración desde cualquier frase de 12 o 24 palabras
+⧉ Varias cuentas: deriva más direcciones de una frase semilla o agrega otras frases, todo protegido con una sola contraseña
+⌂ Libreta de direcciones: los nombres guardados y los destinos recientes se sugieren mientras escribes
+🌐 7 idiomas: English, Deutsch, Español, Français, Português (Brasil), Русский, 中文（简体）
+⚙ Tu propio nodo: conecta la billetera a tu propio nodo o indexador de Keryx desde Configuración
+
+SEGURIDAD Y PRIVACIDAD
+• Las frases semilla se generan en tu dispositivo y se cifran con tu contraseña (PBKDF2-SHA256 con 600 000 iteraciones y luego AES-256-GCM). Las claves y contraseñas nunca se envían a ningún lado.
+• Las claves desbloqueadas viven solo en memoria y se borran tras 15 minutos de inactividad, al bloquear la billetera o al cerrar el navegador.
+• Sin analíticas, sin rastreo, sin cuentas, sin recopilación de datos. El único servidor que contacta la billetera es keryx-labs.com (la API pública del nodo de Keryx), o un nodo que tú configures.
+• Código abierto (licencia ISC): https://github.com/shmutalov/keryx-wallet-extension
+
+PREGUNTAS FRECUENTES
+¿Es la billetera oficial de Keryx Labs?
+No. Billetera Keryx es una billetera independiente, creada por la comunidad y de código abierto. Tu frase semilla también funciona en la billetera web oficial de Keryx.
+
+¿Guarda Kaspa (KAS)?
+No. Keryx se deriva de Kaspa, pero esta billetera solo guarda KRX.
+
+¿Cómo recibo los pagos de minería?
+Copia tu dirección desde el panel y configúrala como dirección de pago en tu pool de minería.
+
+¿Cuánto cuesta una pregunta privada a la IA?
+Cada modelo tiene un precio fijo en KRX, más una pequeña comisión de red. La billetera muestra el total antes de que confirmes.
+
+¿Dónde consigo KRX?
+Mínalo con una GPU o cómpralo en un exchange que liste KRX. Encontrarás enlaces en Configuración → Acerca de y soporte.
+
+AVISO
+Billetera Keryx se ofrece tal cual. Respalda tu frase semilla: es la única forma de recuperar tus fondos. Nunca la compartas con nadie e instala Billetera Keryx solo desde su página oficial en la tienda.

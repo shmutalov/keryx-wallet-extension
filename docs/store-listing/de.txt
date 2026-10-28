@@ -1,0 +1,43 @@
+Keryx Wallet ist eine Self-Custody-Wallet für den Browser – für das Keryx Network (KRX), einen per GPU geschürften BlockDAG mit On-Chain-KI-Inferenz. Senden und empfangen Sie KRX, stellen Sie private KI-Fragen, die Sie in KRX bezahlen, und verbinden Sie sich mit Keryx-dApps. Ihre Schlüssel verlassen niemals Ihr Gerät.
+
+WARUM EINE BROWSER-ERWEITERUNG
+• Ein Klick aus jedem Tab: Guthaben prüfen, Adresse für Pool-Auszahlungen oder Börsen-Abhebungen kopieren und KRX senden.
+• Mit Keryx-dApps verbinden: Websites fordern Zahlungen und Signaturen über den window.keryx-Provider an, und Sie genehmigen jede Anfrage in einem Wallet-Fenster.
+• Ihre privaten KI-Antworten bleiben in Ihrer Wallet, verschlüsselt pro Konto.
+
+FUNKTIONEN
+◈ Live-Dashboard: KRX-Guthaben mit USD-Schätzung, UTXO-Anzahl, Netzwerkstatus und vollständiger Transaktionsverlauf mit Explorer-Links
+➤ KRX senden: Transaktionen werden vollständig in Ihrem Browser erstellt und signiert (BIP340 Schnorr, Sighash nach Kaspa-Art) und dann übertragen
+▣ KRX empfangen: Ihre Adresse als QR-Code, zum Scannen oder Kopieren
+✦ Private KI: Wählen Sie ein Modell (Open-Weight-LLMs wie Qwen, GLM, Gemma und Kimi) und sehen Sie vor der Bestätigung, wie viele Miner es bedienen und was es kostet. Ihr Prompt wird im Browser so verschlüsselt, dass nur die Miner dieses Modells ihn lesen können, und die Antwort wird für Ihre Wallet verschlüsselt. Für jedes Keryx-Netzwerk-Upgrade aktuell gehalten, einschließlich H15 (verifizierbare Inferenz).
+⇄ dApp-Verbindungen: Berechtigungen pro Website, Zahlungen, Nachrichtensignaturen, KI-Anfragen und erweiterte Skript-Signaturen (HTLC-Claim und -Refund). Jede Anfrage zeigt Website, Beträge und Outputs, bevor Sie sie genehmigen. Websites lassen sich jederzeit in den Einstellungen trennen.
+⊕ Erstellen oder importieren: 24-Wörter-BIP39-Seed-Phrase mit geführter Sicherung oder Wiederherstellung aus einer beliebigen Phrase mit 12 oder 24 Wörtern
+⧉ Mehrere Konten: weitere Adressen aus einer Seed-Phrase ableiten oder weitere Seed-Phrasen hinzufügen, alles geschützt durch ein einziges Passwort
+⌂ Adressbuch: gespeicherte Namen und zuletzt verwendete Empfänger werden beim Tippen vorgeschlagen
+🌐 7 Sprachen: English, Deutsch, Español, Français, Português (Brasil), Русский, 中文（简体）
+⚙ Eigener Node: Verbinden Sie die Wallet in den Einstellungen mit Ihrem eigenen Keryx-Node oder -Indexer
+
+SICHERHEIT UND DATENSCHUTZ
+• Seed-Phrasen werden auf Ihrem Gerät erzeugt und mit Ihrem Passwort verschlüsselt (PBKDF2-SHA256 mit 600.000 Iterationen, dann AES-256-GCM). Schlüssel und Passwörter werden nirgendwohin gesendet.
+• Entsperrte Schlüssel liegen nur im Arbeitsspeicher und werden nach 15 Minuten Inaktivität, beim Sperren der Wallet oder beim Schließen des Browsers gelöscht.
+• Keine Analysen, kein Tracking, keine Benutzerkonten, keine Datenerhebung. Der einzige Netzwerk-Host, den die Wallet kontaktiert, ist keryx-labs.com (die öffentliche Keryx-Node-API) oder ein von Ihnen konfigurierter Node.
+• Open Source (ISC-Lizenz): https://github.com/shmutalov/keryx-wallet-extension
+
+FAQ
+Ist das die offizielle Wallet von Keryx Labs?
+Nein. Keryx Wallet ist eine unabhängige, von der Community entwickelte Open-Source-Wallet. Ihre Seed-Phrase funktioniert auch in der offiziellen Keryx-Web-Wallet.
+
+Kann sie Kaspa (KAS) verwahren?
+Nein. Keryx basiert auf Kaspa, aber diese Wallet verwahrt nur KRX.
+
+Wie erhalte ich Mining-Auszahlungen?
+Kopieren Sie Ihre Adresse im Dashboard und tragen Sie sie in Ihrem Mining-Pool als Auszahlungsadresse ein.
+
+Was kostet eine private KI-Frage?
+Jedes Modell hat einen festen Preis in KRX, dazu kommt eine kleine Netzwerkgebühr. Die Wallet zeigt den Gesamtbetrag, bevor Sie bestätigen.
+
+Woher bekomme ich KRX?
+Minen Sie KRX mit einer GPU oder kaufen Sie es an einer Börse, die KRX listet. Links finden Sie unter Einstellungen → Info & Support.
+
+HAFTUNGSAUSSCHLUSS
+Keryx Wallet wird ohne Gewähr bereitgestellt. Sichern Sie Ihre Seed-Phrase: Sie ist die einzige Möglichkeit, Ihr Guthaben wiederherzustellen. Geben Sie sie niemals weiter und installieren Sie Keryx Wallet nur über die offizielle Store-Seite.

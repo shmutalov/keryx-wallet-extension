@@ -1,6 +1,6 @@
 {
-  "ext_name": { "message": "Portefeuille Keryx" },
-  "ext_description": { "message": "Portefeuille côté client pour le Keryx Network (KRX). Créez ou importez un portefeuille et suivez votre solde — les clés ne quittent jamais votre appareil." },
+  "ext_name": { "message": "Portefeuille Keryx — KRX, dApps et IA privée" },
+  "ext_description": { "message": "Portefeuille Keryx (KRX) : envoyez et recevez des KRX, IA privée on-chain, dApps Keryx. Open source ; vos clés restent chez vous." },
   "ext_action_title": { "message": "Portefeuille Keryx" },
 
   "btn_approve": { "message": "Approuver" },
@@ -151,6 +151,16 @@
   "settings_backup_label": { "message": "Sauvegarde" },
   "settings_backup_btn": { "message": "⧉ Sauvegarder la phrase de récupération" },
   "settings_backup_hint": { "message": "Révèle une phrase de récupération après une nouvelle saisie de votre mot de passe." },
+  "settings_about_label": { "message": "À propos et assistance" },
+  "settings_rate": { "message": "★ Noter Portefeuille Keryx" },
+  "settings_rate_hint": { "message": "Un court avis aide les autres utilisateurs de Keryx à trouver un portefeuille digne de confiance." },
+  "settings_buy_krx": { "message": "Acheter des KRX" },
+  "settings_mine_krx": { "message": "Miner des KRX" },
+  "settings_source": { "message": "Code source" },
+  "settings_report_issue": { "message": "Signaler un problème" },
+  "settings_third_party_hint": { "message": "Les plateformes d’échange sont des services tiers, sans lien avec Portefeuille Keryx." },
+  "settings_donate_label": { "message": "Soutenir le développement" },
+  "settings_donate_hint": { "message": "Les dons en KRX financent la maintenance et la prise en charge des mises à niveau du réseau dès le premier jour." },
   "settings_danger_zone": { "message": "Zone de danger" },
   "settings_danger_hint": { "message": "La réinitialisation supprime TOUS les comptes et le coffre chiffré de ce navigateur. Les fonds ne sont récupérables qu’avec les phrases de récupération — assurez-vous que chacune d’elles est sauvegardée avant de continuer." },
 
@@ -262,5 +272,14 @@
   "dash_krx_address": { "message": "$1 — adresse KRX" },
   "dash_send": { "message": "Envoyer des KRX →" },
   "dash_inference": { "message": "Inférence IA →" },
+  "title_receive": { "message": "Recevoir (code QR)" },
+  "title_receive_krx": { "message": "Recevoir des KRX" },
+  "receive_qr_label": { "message": "Code QR de votre adresse KRX" },
+  "receive_mode_address": { "message": "Adresse" },
+  "receive_mode_phone": { "message": "Téléphone" },
+  "receive_hint_address": { "message": "Le code d’adresse standard pour les applications de portefeuille. L’appareil photo de l’iPhone ne peut pas le copier : passez alors sur « Téléphone »." },
+  "receive_hint_phone": { "message": "Ouvre cette adresse dans l’explorateur Keryx, dans le navigateur du téléphone. Appuyez longuement sur l’adresse pour la copier." },
+  "receive_only_krx": { "message": "N’envoyez à cette adresse que des KRX du réseau Keryx." },
+  "receive_qr_label_phone": { "message": "Code QR renvoyant vers votre adresse dans l’explorateur Keryx" },
   "dash_consolidate": { "message": "Consolider — disponible dans la prochaine version." }
 }

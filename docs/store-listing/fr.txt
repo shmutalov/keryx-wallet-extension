@@ -1,0 +1,43 @@
+Portefeuille Keryx est un portefeuille non custodial pour navigateur, conçu pour le Keryx Network (KRX), la BlockDAG minée par GPU avec inférence d’IA on-chain. Envoyez et recevez des KRX, posez des questions privées à une IA en payant en KRX et connectez-vous aux dApps Keryx. Vos clés ne quittent jamais votre appareil.
+
+POURQUOI UNE EXTENSION DE NAVIGATEUR
+• À un clic depuis n’importe quel onglet : consultez votre solde, copiez votre adresse pour les paiements de pool ou les retraits depuis une plateforme d’échange, et envoyez des KRX.
+• Connexion aux dApps Keryx : les sites demandent des paiements et des signatures via le fournisseur window.keryx, et vous approuvez chaque demande dans une fenêtre du portefeuille.
+• Vos réponses d’IA privées restent dans votre portefeuille, chiffrées par compte.
+
+FONCTIONNALITÉS
+◈ Tableau de bord en direct : solde en KRX avec estimation en USD, nombre d’UTXO, état du réseau et historique complet des transactions avec liens vers l’explorateur
+➤ Envoyer des KRX : les transactions sont construites et signées entièrement dans votre navigateur (Schnorr BIP340, sighash de type Kaspa), puis diffusées
+▣ Recevoir des KRX : votre adresse en code QR, prête à scanner ou à copier
+✦ IA privée : choisissez un modèle (LLM à poids ouverts comme Qwen, GLM, Gemma et Kimi) et voyez combien de mineurs le servent et ce qu’il coûte avant de confirmer. Votre question est chiffrée dans le navigateur afin que seuls les mineurs qui servent ce modèle puissent la lire, et la réponse vous revient chiffrée pour votre portefeuille. Mis à jour pour chaque mise à niveau du réseau Keryx, y compris H15 (inférence vérifiable).
+⇄ Connexions aux dApps : autorisations par site, paiements, signature de messages, requêtes d’IA et signature avancée de scripts (claim et refund HTLC). Chaque demande affiche le site, les montants et les sorties avant que vous l’approuviez. Déconnectez un site à tout moment dans les Paramètres.
+⊕ Créer ou importer : phrase de récupération BIP39 de 24 mots avec une étape de sauvegarde guidée, ou restauration depuis n’importe quelle phrase de 12 ou 24 mots
+⧉ Comptes multiples : dérivez d’autres adresses à partir d’une même phrase de récupération ou ajoutez-en d’autres, le tout protégé par un seul mot de passe
+⌂ Carnet d’adresses : les noms enregistrés et les destinataires récents sont suggérés pendant la saisie
+🌐 7 langues : English, Deutsch, Español, Français, Português (Brasil), Русский, 中文（简体）
+⚙ Votre propre nœud : connectez le portefeuille à votre propre nœud ou indexeur Keryx dans les Paramètres
+
+SÉCURITÉ ET CONFIDENTIALITÉ
+• Les phrases de récupération sont générées sur votre appareil et chiffrées avec votre mot de passe (PBKDF2-SHA256 avec 600 000 itérations, puis AES-256-GCM). Les clés et les mots de passe ne sont jamais envoyés nulle part.
+• Les clés déverrouillées ne résident qu’en mémoire et sont effacées après 15 minutes d’inactivité, lorsque vous verrouillez le portefeuille ou à la fermeture du navigateur.
+• Pas d’analyse, pas de pistage, pas de compte, aucune collecte de données. Le seul hôte réseau contacté par le portefeuille est keryx-labs.com (l’API publique du nœud Keryx), ou un nœud que vous configurez vous-même.
+• Open source (licence ISC) : https://github.com/shmutalov/keryx-wallet-extension
+
+FAQ
+Est-ce le portefeuille officiel de Keryx Labs ?
+Non. Portefeuille Keryx est un portefeuille indépendant, open source et développé par la communauté. Votre phrase de récupération fonctionne aussi dans le portefeuille web officiel de Keryx.
+
+Peut-il détenir du Kaspa (KAS) ?
+Non. Keryx est dérivé de Kaspa, mais ce portefeuille ne détient que des KRX.
+
+Comment recevoir mes paiements de minage ?
+Copiez votre adresse depuis le tableau de bord et indiquez-la comme adresse de paiement dans votre pool de minage.
+
+Combien coûte une question privée à l’IA ?
+Chaque modèle a un prix fixe en KRX, plus de petits frais de réseau. Le portefeuille affiche le total avant que vous confirmiez.
+
+Où obtenir des KRX ?
+Minez-les avec un GPU ou achetez-les sur une plateforme d’échange qui liste les KRX. Vous trouverez des liens dans Paramètres → À propos et assistance.
+
+AVERTISSEMENT
+Portefeuille Keryx est fourni en l’état. Sauvegardez votre phrase de récupération : c’est le seul moyen de récupérer vos fonds. Ne la partagez jamais et n’installez Portefeuille Keryx que depuis sa page officielle sur le Chrome Web Store.

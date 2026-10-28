@@ -7,9 +7,10 @@
 // label/icon copy can change freely. Checks that need live data from the
 // Keryx API are SKIPPED with a warning when the node is unreachable.
 import { JSDOM } from 'jsdom';
+import jsQR from 'jsqr';
 import { readFileSync, readdirSync } from 'fs';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
-import { hexToBytes } from '../src/lib/keryx.js';
+import { hexToBytes, isValidAddress } from '../src/lib/keryx.js';
 import { openRequest, sealResponse, toHex } from '../src/lib/private.js';
 import { H14_ACTIVATION_DAA, H15_ACTIVATION_DAA } from '../src/lib/models.js';
 
@@ -42,6 +43,22 @@ const fire = (node, type) => node.dispatchEvent(new dom.window.Event(type, { bub
 const until = async (fn, tries = 60) => {
   for (let i = 0; i < tries && !fn(); i++) await sleep(500);
   return fn();
+};
+
+// Rasterize the receive screen's QR path (one "Mx,yh1v1h-1z" square per dark module, on a
+// light tile of `dim` modules) and read it back with an independent decoder.
+const decodeQrPath = (d, dim, scale = 6) => {
+  const px = dim * scale;
+  const rgba = new Uint8ClampedArray(px * px * 4).fill(255);
+  for (const [, mx, my] of d.matchAll(/M(\d+),(\d+)h1v1h-1z/g)) {
+    for (let y = my * scale; y < (Number(my) + 1) * scale; y++) {
+      for (let x = mx * scale; x < (Number(mx) + 1) * scale; x++) {
+        const i = (y * px + x) * 4;
+        rgba[i] = rgba[i + 1] = rgba[i + 2] = 0;
+      }
+    }
+  }
+  return jsQR(rgba, px, px)?.data ?? null;
 };
 
 let failures = 0;
@@ -246,6 +263,27 @@ select.value = select.querySelectorAll('option')[0].value;
 fire(select, 'change');
 await until(() => byId('address')?.textContent === addr);
 check(15, 'switching back restores account 1 address', byId('address')?.textContent === addr);
+
+// --- receive: the QR code must decode back to the active account's address ---
+byId('receive-btn').click();
+await sleep(50);
+const qr = byId('receive-qr');
+const qrText = qr && decodeQrPath(qr.querySelector('path').getAttribute('d'), Number(qr.getAttribute('viewBox').split(' ')[2]));
+check('15q', 'receive QR decodes to the active address', qrText === addr, qrText ?? 'not decodable');
+check('15r', 'receive screen shows the address with a copy button',
+  byId('receive-address')?.textContent === addr && !!byId('receive-copy-btn'));
+// "Phone" swaps in a code for the explorer page (the iPhone Camera won't copy keryx: codes)
+byId('receive-mode-phone').click();
+await sleep(20);
+const phoneQr = byId('receive-qr-phone');
+const phoneText = phoneQr && decodeQrPath(phoneQr.querySelector('path').getAttribute('d'), Number(phoneQr.getAttribute('viewBox').split(' ')[2]));
+check('15s', 'phone mode: QR opens the address on the explorer, choice remembered',
+  phoneText === `https://keryx-labs.com/address/${addr}` &&
+  phoneQr.parentElement.style.display === '' && qr.parentElement.style.display === 'none' &&
+  byId('receive-mode-phone').getAttribute('aria-pressed') === 'true' && localStore.krx_receive_mode === 'phone',
+  phoneText ?? 'not decodable');
+app().querySelector('.link-btn').click(); // back to dashboard
+await until(() => !!byId('send-btn'), 10);
 
 // --- address book: add account 2's address under a name ---
 byId('send-btn').click();
@@ -550,6 +588,23 @@ const incomplete = localeDirs.filter((loc) => {
 });
 check('25k', 'every locale is complete: all keys present, $n placeholders match en',
   incomplete.length === 0, incomplete.join(', '));
+// ext_description is the store-listing summary: the store caps it at 132 characters
+const summaryTooLong = localeDirs.filter((loc) => {
+  const m = JSON.parse(readFileSync(new URL(`../_locales/${loc}/messages.json`, import.meta.url), 'utf8'));
+  return [...m.ext_description.message].length > 132;
+});
+check('25l', 'store summary fits the 132-character limit in every locale',
+  summaryTooLong.length === 0, summaryTooLong.join(', '));
+
+// --- About & support: outbound links open in a new tab; the tip row needs a valid address ---
+const outbound = ['settings-rate-link', 'settings-buy-link', 'settings-mine-link', 'settings-source-link', 'settings-issues-link'];
+check('25m', 'about links present and open in a new tab without a referrer',
+  outbound.every((id) => byId(id)?.target === '_blank' && byId(id).rel === 'noreferrer') &&
+  byId('settings-rate-link').href.endsWith('/hoobkmlannjlgaajjlhjagdbmijggcab/reviews') &&
+  new URL(byId('settings-buy-link').href).host === 'nonkyc.io');
+const donateRow = byId('settings-donate');
+check('25n', 'tip row hidden, or shows a valid keryx: address',
+  !donateRow || isValidAddress(donateRow.querySelector('.addr')?.textContent ?? ''));
 
 // --- seed backup requires re-entering the password ---
 byId('settings-backup-btn').click();

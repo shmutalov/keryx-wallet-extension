@@ -1,6 +1,6 @@
 {
-  "ext_name": { "message": "Кошелёк Keryx" },
-  "ext_description": { "message": "Клиентский кошелёк для сети Keryx (KRX). Создайте или импортируйте кошелёк и отслеживайте баланс — ключи никогда не покидают ваше устройство." },
+  "ext_name": { "message": "Кошелёк Keryx — KRX, dApps и приватный ИИ" },
+  "ext_description": { "message": "Кошелёк Keryx (KRX): отправка и получение KRX, приватный ИИ, подключение dApps. Открытый код; ключи не покидают устройство." },
   "ext_action_title": { "message": "Кошелёк Keryx" },
 
   "btn_approve": { "message": "Подтвердить" },
@@ -151,6 +151,16 @@
   "settings_backup_label": { "message": "Резервная копия" },
   "settings_backup_btn": { "message": "⧉ Резервная копия сид-фразы" },
   "settings_backup_hint": { "message": "Показывает сид-фразу после повторного ввода пароля." },
+  "settings_about_label": { "message": "О кошельке и поддержка" },
+  "settings_rate": { "message": "★ Оценить Кошелёк Keryx" },
+  "settings_rate_hint": { "message": "Короткий отзыв помогает другим пользователям Keryx найти надёжный кошелёк." },
+  "settings_buy_krx": { "message": "Купить KRX" },
+  "settings_mine_krx": { "message": "Майнить KRX" },
+  "settings_source": { "message": "Исходный код" },
+  "settings_report_issue": { "message": "Сообщить о проблеме" },
+  "settings_third_party_hint": { "message": "Биржи — сторонние сервисы и не связаны с Кошельком Keryx." },
+  "settings_donate_label": { "message": "Поддержать разработку" },
+  "settings_donate_hint": { "message": "Пожертвования в KRX идут на поддержку кошелька и обновления к каждому апгрейду сети с первого дня." },
   "settings_danger_zone": { "message": "Опасная зона" },
   "settings_danger_hint": { "message": "Сброс удаляет ВСЕ аккаунты и зашифрованное хранилище из этого браузера. Средства можно восстановить только по сид-фразам — убедитесь, что все они сохранены, прежде чем продолжить." },
 
@@ -262,5 +272,14 @@
   "dash_krx_address": { "message": "$1 — KRX-адрес" },
   "dash_send": { "message": "Отправить KRX →" },
   "dash_inference": { "message": "ИИ-инференс →" },
+  "title_receive": { "message": "Получить (QR-код)" },
+  "title_receive_krx": { "message": "Получить KRX" },
+  "receive_qr_label": { "message": "QR-код вашего адреса KRX" },
+  "receive_mode_address": { "message": "Адрес" },
+  "receive_mode_phone": { "message": "Телефон" },
+  "receive_hint_address": { "message": "Стандартный код адреса для приложений-кошельков. Камера iPhone не может его скопировать — в этом случае переключитесь на «Телефон»." },
+  "receive_hint_phone": { "message": "Открывает этот адрес в обозревателе Keryx в браузере телефона. Нажмите и удерживайте адрес, чтобы скопировать его." },
+  "receive_only_krx": { "message": "Отправляйте на этот адрес только KRX в сети Keryx." },
+  "receive_qr_label_phone": { "message": "QR-код со ссылкой на ваш адрес в обозревателе Keryx" },
   "dash_consolidate": { "message": "Консолидация — скоро в следующем выпуске." }
 }

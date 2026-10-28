@@ -207,6 +207,12 @@ h2 {
   box-shadow: none;
 }
 
+a.btn {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+}
+
 .btn-small {
   width: auto;
   padding: 4px 10px;
@@ -688,6 +694,15 @@ textarea::placeholder {
   text-align: right;
 }
 
+.settings-row a {
+  color: var(--mx-bright);
+  text-decoration: none;
+}
+
+.settings-row a:hover {
+  text-decoration: underline;
+}
+
 .card.danger {
   border-color: var(--mx-error-border);
 }
@@ -739,6 +754,58 @@ textarea::placeholder {
   color: var(--mx-green);
   word-break: break-all;
   line-height: 1.5;
+}
+
+/* --- receive --- */
+
+.qr-box {
+  align-self: center;
+  max-width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.qr-box svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.qr-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.seg {
+  display: flex;
+  align-self: center;
+  border: 1px solid var(--mx-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.seg button {
+  padding: 5px 16px;
+  font-family: inherit;
+  font-size: 11px;
+  background: transparent;
+  color: var(--mx-dim);
+  border: none;
+  cursor: pointer;
+}
+
+.seg button + button {
+  border-left: 1px solid var(--mx-border);
+}
+
+.seg button:hover {
+  color: var(--mx-text);
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--mx-cta);
+  color: var(--mx-cta-text);
 }
 
 /* --- balance --- */

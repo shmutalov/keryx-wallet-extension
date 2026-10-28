@@ -1,6 +1,6 @@
 {
-  "ext_name": { "message": "Keryx Wallet" },
-  "ext_description": { "message": "Clientseitige Wallet für das Keryx Network (KRX). Erstellen oder importieren Sie eine Wallet und behalten Sie Ihr Guthaben im Blick — die Schlüssel verlassen niemals Ihr Gerät." },
+  "ext_name": { "message": "Keryx Wallet — KRX, dApps & private KI" },
+  "ext_description": { "message": "Wallet für Keryx (KRX): KRX senden & empfangen, private On-Chain-KI fragen, dApps verbinden. Open Source, Schlüssel bleiben lokal." },
   "ext_action_title": { "message": "Keryx Wallet" },
 
   "btn_approve": { "message": "Genehmigen" },
@@ -151,6 +151,16 @@
   "settings_backup_label": { "message": "Sicherung" },
   "settings_backup_btn": { "message": "⧉ Seed-Phrase sichern" },
   "settings_backup_hint": { "message": "Zeigt eine Seed-Phrase nach erneuter Passworteingabe an." },
+  "settings_about_label": { "message": "Info & Support" },
+  "settings_rate": { "message": "★ Keryx Wallet bewerten" },
+  "settings_rate_hint": { "message": "Eine kurze Bewertung hilft anderen Keryx-Nutzern, eine vertrauenswürdige Wallet zu finden." },
+  "settings_buy_krx": { "message": "KRX kaufen" },
+  "settings_mine_krx": { "message": "KRX minen" },
+  "settings_source": { "message": "Quellcode" },
+  "settings_report_issue": { "message": "Problem melden" },
+  "settings_third_party_hint": { "message": "Börsen sind Drittanbieter und stehen in keiner Verbindung zu Keryx Wallet." },
+  "settings_donate_label": { "message": "Entwicklung unterstützen" },
+  "settings_donate_hint": { "message": "Spenden in KRX finanzieren die Wartung und die Unterstützung neuer Netzwerk-Upgrades ab dem ersten Tag." },
   "settings_danger_zone": { "message": "Gefahrenzone" },
   "settings_danger_hint": { "message": "Das Zurücksetzen entfernt ALLE Konten und den verschlüsselten Tresor aus diesem Browser. Gelder sind nur mit den Seed-Phrasen wiederherstellbar — stellen Sie sicher, dass jede einzelne gesichert ist, bevor Sie fortfahren." },
 
@@ -262,5 +272,14 @@
   "dash_krx_address": { "message": "$1 — KRX-Adresse" },
   "dash_send": { "message": "KRX senden →" },
   "dash_inference": { "message": "KI-Inferenz →" },
+  "title_receive": { "message": "Empfangen (QR-Code)" },
+  "title_receive_krx": { "message": "KRX empfangen" },
+  "receive_qr_label": { "message": "QR-Code Ihrer KRX-Adresse" },
+  "receive_mode_address": { "message": "Adresse" },
+  "receive_mode_phone": { "message": "Telefon" },
+  "receive_hint_address": { "message": "Der Standard-Adresscode für Wallet-Apps. Die iPhone-Kamera kann ihn nicht kopieren, wechseln Sie dort zu „Telefon“." },
+  "receive_hint_phone": { "message": "Öffnet diese Adresse im Keryx-Explorer im Browser des Telefons. Halten Sie die Adresse dort gedrückt, um sie zu kopieren." },
+  "receive_only_krx": { "message": "Senden Sie an diese Adresse nur KRX im Keryx-Netzwerk." },
+  "receive_qr_label_phone": { "message": "QR-Code mit Link zu Ihrer Adresse im Keryx-Explorer" },
   "dash_consolidate": { "message": "Konsolidieren — kommt in der nächsten Version." }
 }

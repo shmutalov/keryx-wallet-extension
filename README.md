@@ -1,18 +1,24 @@
 # Keryx Wallet — Chrome Extension
 
-A client-side Chrome (MV3) extension wallet for the **Keryx Network** (PoW/PoM blockchain, ticker **KRX**), styled after and protocol-compatible with the official web wallet at [keryx-labs.com/wallet](https://keryx-labs.com/wallet).
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/hoobkmlannjlgaajjlhjagdbmijggcab?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/keryx-wallet/hoobkmlannjlgaajjlhjagdbmijggcab?utm_source=github&utm_medium=referral&utm_campaign=readme)
+[![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE)
+
+**[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/keryx-wallet/hoobkmlannjlgaajjlhjagdbmijggcab?utm_source=github&utm_medium=referral&utm_campaign=readme)** — works in Chrome, Brave and other Chromium-based browsers.
+
+A client-side Chrome (MV3) extension wallet for the **Keryx Network** (PoW/PoM blockchain, ticker **KRX**), styled after and protocol-compatible with the official web wallet at [keryx-labs.com/wallet](https://keryx-labs.com/wallet). Send and receive KRX, ask private on-chain AI, and connect to Keryx dApps through `window.keryx`.
 
 Private keys are derived and stored **only on your device** — the extension talks to the public Keryx node API for read-only data.
 
-## Features (phase 1)
+## Features
 
 - **Create a new wallet** — generates a 24-word BIP39 mnemonic with a backup-confirmation step, then a separate page to set the session password.
 - **Import a wallet** — accepts a 12- or 24-word BIP39 mnemonic.
 - **Multiple accounts** — switchable and renamable from the dashboard. "Add account" offers: next address from the current seed (`m/44'/111111'/0'/0/{n}`), a brand-new seed phrase, or an imported one. **One global session password secures the entire account store** — accounts added while unlocked need no extra password.
 - **Seed backup** — reveal any account's seed phrase from Settings; requires re-entering the session password (verified by decrypting the vault) even while unlocked.
-- **Settings page** — session info, connected dApp sites, a configurable **API host** (point the wallet at your own Keryx node/indexer; empty = official host; the host must allow CORS, which the stock indexer does), plus a danger zone: the destructive "Reset wallet" (removes all accounts + vault) lives there and only unlocks after typing `RESET`.
+- **Settings page** — session info, connected dApp sites, a configurable **API host** (point the wallet at your own Keryx node/indexer; empty = official host; the host must allow CORS, which the stock indexer does), an **About & support** card (rate the wallet, buy or mine KRX, source code, report a problem, tip address), plus a danger zone: the destructive "Reset wallet" (removes all accounts + vault) lives there and only unlocks after typing `RESET`.
 - **Balance dashboard** — live KRX balance (auto-refresh every 15 s), approximate USD value, UTXO count with consolidation hint, network DAA score, and a 3-row recent-transactions preview; a dedicated History screen paginates the full list (15 per page) with explorer links.
 - **Send KRX** — Kaspa-style transaction building and signing fully client-side: keyed blake2b-256 `TransactionSigningHash`, BIP340 Schnorr signatures, greedy largest-first UTXO selection with coinbase-maturity filtering, change back to self, broadcast via the public node.
+- **Receive KRX** — the QR button next to the dashboard address opens a Receive screen: a QR code (dark modules on a light tile with the standard quiet zone) plus a copy button. An **Address / Phone** switch picks what the code holds: the standard `keryx:` address for wallet apps, or a link to the address's page on the Keryx explorer — the iPhone Camera won't copy `keryx:` codes (it reads the prefix as an app link) but opens links in Safari. The last choice is remembered.
 - **Address book & recents** — save `name → address` entries (managed from Settings or the Send screen); the destination field offers a picker with saved and recently-used addresses, filtered as you type.
 - **AI inference** — submit prompts to the Keryx Inference Oracle from a dedicated page: model picker with live miner counts, max-tokens slider, cost estimate, AiRequest transaction signed locally with the reward locked in the H8 keyless `aivault` output, and a live feed with statuses (pending/responded/challenged/slashed). From the **H14** hardfork (keryx-node v1.6.4, mainnet DAA 121,985,000) inference is **private**: the prompt is sealed in the browser to the model's tier cohort (ECDH + HKDF + ChaCha20-Poly1305, wire-compatible with keryx-node and keryx-labs.com), each miner seals its answer back, and *Your private requests* decrypts it — kept encrypted per account, with the per-request key re-derived from the seed, never stored. Pricing switches to the flat H14 price per model and tier 3 to Qwen3.8-27B automatically at the gate. From **H15** (keryx-node v1.6.6, mainnet DAA 140,115,000) requests seal under key schedule 2 (each answer key bound to its responder, so no miner can pass off another’s answer), stage-2 answers have their token-id trailer stripped, and long prompts that may overflow the model context get a warning.
 - **Localized UI** — English, Deutsch, Español, Français, Português (Brasil), Русский and 中文（简体）. Follows the browser's UI language by default (every regional variant maps to its base locale, so `es-CR`/`es-419`/`es-MX` all get Español and `fr-CA`/`fr-BE` get Français; Traditional-Chinese variants like `zh-TW` deliberately stay English until a zh_TW catalog exists), with a manual override in Settings that applies immediately across the popup, approval window and background. The same `_locales/` files drive the Chrome Web Store listing and extension name via the manifest's `__MSG_*__` placeholders, so there is one source of truth per string.
@@ -21,7 +27,11 @@ Private keys are derived and stored **only on your device** — the extension ta
 
 Still planned: UTXO consolidation (see [docs/PROTOCOL.md](docs/PROTOCOL.md) — the flow is already specified there).
 
-## Install (Load unpacked)
+## Install
+
+**From the Chrome Web Store:** [Keryx Wallet](https://chromewebstore.google.com/detail/keryx-wallet/hoobkmlannjlgaajjlhjagdbmijggcab?utm_source=github&utm_medium=referral&utm_campaign=readme). The official listing ID is `hoobkmlannjlgaajjlhjagdbmijggcab` — any other extension calling itself "Keryx Wallet" is not this project. Never enter your seed phrase anywhere else.
+
+**From source (Load unpacked):**
 
 1. `npm install`
 2. `npm run build` — bundles everything into `extension/`
@@ -47,6 +57,8 @@ src/
   lib/provider.js   Per-origin dApp grants + pending approval requests
   lib/i18n.js       t() over _locales/*/messages.json: browser-language resolution,
                     Settings override synced across contexts, per-key fallback to en
+  lib/vendor/       qrcodegen.ts: Project Nayuki's QR Code encoder (MIT), vendored
+                    at upstream commit 3c6d0b3 with only an export added
 _locales/           en · de · es · fr · pt_BR · ru · zh_CN message catalogs (also the store listing)
   popup/            Popup UI (vanilla JS, theme extracted from keryx-labs.com)
   approval/         Approval window for dApp requests (connect/send/sign/inference)
@@ -57,6 +69,7 @@ build.mjs           esbuild bundling -> extension/
 manifest.json       MV3 manifest
 docs/PROTOCOL.md    Reverse-engineered Keryx protocol notes (addresses, sighash, tx format)
 docs/PROVIDER.md    window.keryx dApp API reference (incl. HTLC claim/refund examples)
+docs/store-listing/ Chrome Web Store listing: per-locale descriptions + dashboard checklist
 ```
 
 ## Security model
@@ -83,4 +96,8 @@ Three test suites run via `npm test` (all gate CI):
 
 - `scripts/tx-unit.mjs` — signer unit tests: coin selection, coinbase maturity, change math, wire format, BIP340 signature verification against the recomputed sighash, all Kaspa sighash-type rules, HTLC claim/refund signature-script assembly, and personal-message signing.
 - `scripts/provider-e2e.mjs` — fully offline drive of the dApp provider chain: the injected `window.keryx`, the content-script relay, the background router (approval-window lifecycle, per-origin grants, window-close rejection) and the approval page itself (unlock, connect, send, HTLC sign-tx, sign-message, reject).
-- `scripts/popup-e2e.mjs` — jsdom end-to-end drive of the real bundle: onboarding, vault, multi-account, address book, and a full send against a mocked node (broadcast body inspected); live-data checks auto-skip when the node is unreachable.
+- `scripts/popup-e2e.mjs` — jsdom end-to-end drive of the real bundle: onboarding, vault, multi-account, the receive QR in both modes (rasterized and decoded back with jsQR), address book, and a full send against a mocked node (broadcast body inspected); live-data checks auto-skip when the node is unreachable.
+
+## License
+
+[ISC](LICENSE). Includes [Project Nayuki's QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) (MIT); its notice stays in `src/lib/vendor/qrcodegen.ts`.

@@ -45,9 +45,18 @@ import { t, loadLocale, setLocale, getLocaleOverride, SUPPORTED_LOCALES, LOCALE_
 import { createVault, unlockVault, updateVault, vaultExists, clearVault } from '../lib/vault.js';
 import { startSession, getSession, updateSessionStore, touchSession, endSession } from '../lib/session.js';
 import { getConnections, removeConnection } from '../lib/provider.js';
+import { qrcodegen } from '../lib/vendor/qrcodegen.ts';
 
 const app = document.getElementById('app');
 const ACTIVE_KEY = 'krx_active';
+const RECEIVE_MODE_KEY = 'krx_receive_mode'; // 'address' | 'phone' — last Receive QR mode
+
+// Settings → About & support. The tip row stays hidden while DONATE_ADDRESS is empty.
+const STORE_URL = 'https://chromewebstore.google.com/detail/hoobkmlannjlgaajjlhjagdbmijggcab';
+const REPO_URL = 'https://github.com/shmutalov/keryx-wallet-extension';
+const BUY_KRX_URL = 'https://nonkyc.io/market/KRX_USDT';
+const MINER_URL = 'https://github.com/Keryx-Labs/keryx-miner';
+const DONATE_ADDRESS = 'keryx:qz4zajm2kecfy5c6qctepdnt4666yz0qhff5alnhyy6jjzfm94svxylck57rh';
 
 const state = {
   store: null, // { accounts: [{ id, label, mnemonic, index }] }
@@ -127,6 +136,9 @@ const LOCK_SVG =
 
 const LOCK_ICON =
   '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
+
+const QR_ICON =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><path d="M14 14h3v3h-3zM21 14v7h-4M14 21h.01"></path></svg>';
 
 const LOGO_SVG =
   '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--mx-bright)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(46,227,88,.45))"><path d="M8 3v18"></path><path d="M8 12h3"></path><path d="M11 12 17 4h3l-6 8 6 8h-3l-6-8"></path><circle cx="8" cy="3" r="1.1" fill="var(--mx-bright)"></circle><circle cx="8" cy="21" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="4" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="20" r="1.1" fill="var(--mx-bright)"></circle></svg>';
@@ -515,6 +527,12 @@ function renderSettings() {
     await resetWallet();
   });
 
+  // outbound links only open on click, in a normal tab — nothing is sent with them
+  const extLink = (id, href, text, cls) =>
+    el('a', { id, href, target: '_blank', rel: 'noreferrer', ...(cls ? { class: cls } : {}) }, text);
+  const linkRow = (label, link) =>
+    el('div', { class: 'settings-row' }, el('span', {}, label), el('span', {}, link));
+
   show(
     el('div', { class: 'back-row' },
       el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back')),
@@ -560,6 +578,23 @@ function renderSettings() {
         t('settings_backup_btn')),
       el('p', { class: 'hint', style: 'text-align:left;margin-top:8px' },
         t('settings_backup_hint'))
+    ),
+    el('div', { class: 'card stack' },
+      el('span', { class: 'label' }, t('settings_about_label')),
+      extLink('settings-rate-link', `${STORE_URL}/reviews`, t('settings_rate'), 'btn ghost'),
+      el('p', { class: 'hint', style: 'text-align:left' }, t('settings_rate_hint')),
+      el('div', {},
+        linkRow(t('settings_buy_krx'), extLink('settings-buy-link', BUY_KRX_URL, 'NonKYC ↗')),
+        linkRow(t('settings_mine_krx'), extLink('settings-mine-link', MINER_URL, 'keryx-miner ↗')),
+        linkRow(t('settings_source'), extLink('settings-source-link', REPO_URL, 'GitHub ↗')),
+        linkRow(t('settings_report_issue'), extLink('settings-issues-link', `${REPO_URL}/issues`, 'GitHub ↗'))),
+      el('p', { class: 'hint', style: 'text-align:left' }, t('settings_third_party_hint')),
+      DONATE_ADDRESS && el('div', { id: 'settings-donate' },
+        el('span', { class: 'label' }, t('settings_donate_label')),
+        el('div', { class: 'addr-row' },
+          el('div', { class: 'addr' }, DONATE_ADDRESS),
+          copyButton(() => DONATE_ADDRESS, '⧉', '✓', 'copy-donate-btn')),
+        el('p', { class: 'hint', style: 'text-align:left;margin-top:6px' }, t('settings_donate_hint')))
     ),
     el('div', { class: 'card danger stack' },
       el('span', { class: 'label danger' }, t('settings_danger_zone')),
@@ -1498,6 +1533,84 @@ function renderLocked() {
   setTimeout(() => password.focus(), 50);
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * `text` as a QR code: dark modules on a light tile with the standard 4-module quiet
+ * zone (scanners read inverted codes unreliably), drawn at whole pixels per module.
+ */
+function qrSvg(text, label, id) {
+  const qr = qrcodegen.QrCode.encodeText(text, qrcodegen.QrCode.Ecc.MEDIUM);
+  const border = 4;
+  const dim = qr.size + border * 2;
+  let d = '';
+  for (let y = 0; y < qr.size; y++) {
+    for (let x = 0; x < qr.size; x++) {
+      if (qr.getModule(x, y)) d += `M${x + border},${y + border}h1v1h-1z`;
+    }
+  }
+  const node = (tag, attrs) => {
+    const n = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    return n;
+  };
+  const svg = node('svg', {
+    id, viewBox: `0 0 ${dim} ${dim}`, width: dim * 5, height: dim * 5,
+    'shape-rendering': 'crispEdges', role: 'img', 'aria-label': label,
+  });
+  svg.append(node('rect', { width: dim, height: dim, fill: '#ffffff' }), node('path', { d, fill: '#04120a' }));
+  return svg;
+}
+
+function renderReceive() {
+  const acct = activeAccount();
+  const { address } = state.wallet;
+
+  // The iPhone Camera won't copy a keryx: code (it reads the prefix as a link to an app
+  // nobody has), so "Phone" shows a code for the address's explorer page, which Safari opens.
+  const addressQr = qrSvg(address, t('receive_qr_label'), 'receive-qr');
+  const phoneQr = qrSvg(`${DEFAULT_API_BASE}/address/${address}`, t('receive_qr_label_phone'), 'receive-qr-phone');
+  const addressBox = el('div', { class: 'qr-box' }, addressQr);
+  const phoneBox = el('div', { class: 'qr-box' }, phoneQr);
+  // both codes share one stage sized to the larger, so the switch below never moves
+  const stageHeight = Math.max(...[addressQr, phoneQr].map((svg) => Number(svg.getAttribute('height'))));
+  const addressBtn = el('button', { id: 'receive-mode-address', type: 'button' }, t('receive_mode_address'));
+  const phoneBtn = el('button', { id: 'receive-mode-phone', type: 'button' }, t('receive_mode_phone'));
+  const hint = el('p', { id: 'receive-hint', class: 'hint', style: 'text-align:left' });
+  const setMode = (phone) => {
+    addressBox.style.display = phone ? 'none' : '';
+    phoneBox.style.display = phone ? '' : 'none';
+    addressBtn.setAttribute('aria-pressed', String(!phone));
+    phoneBtn.setAttribute('aria-pressed', String(phone));
+    hint.textContent = t(phone ? 'receive_hint_phone' : 'receive_hint_address');
+  };
+  for (const [btn, phone] of [[addressBtn, false], [phoneBtn, true]]) {
+    btn.addEventListener('click', () => {
+      setMode(phone);
+      chrome.storage.local.set({ [RECEIVE_MODE_KEY]: phone ? 'phone' : 'address' });
+    });
+  }
+  setMode(false);
+  chrome.storage.local.get(RECEIVE_MODE_KEY).then((r) => setMode(r[RECEIVE_MODE_KEY] === 'phone'));
+
+  show(
+    el('div', { class: 'back-row' },
+      el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back')),
+      el('h2', {}, t('title_receive_krx'))
+    ),
+    el('div', { class: 'card stack' },
+      el('span', { class: 'label' }, t('dash_krx_address', acct.label)),
+      el('div', { class: 'qr-stage', style: `min-height:${stageHeight}px` }, addressBox, phoneBox),
+      el('div', { class: 'seg' }, addressBtn, phoneBtn),
+      el('div', { class: 'addr-row' },
+        el('div', { id: 'receive-address', class: 'addr' }, address),
+        copyButton(() => address, '⧉', '✓', 'receive-copy-btn')),
+      hint,
+      el('p', { class: 'hint', style: 'text-align:left' }, t('receive_only_krx'))
+    )
+  );
+}
+
 function renderDashboard() {
   const acct = activeAccount();
   const { address } = state.wallet;
@@ -1654,6 +1767,7 @@ function renderDashboard() {
       el('div', { class: 'addr-row' },
         el('div', { id: 'address', class: 'addr' }, address),
         copyButton(() => address, '⧉', '✓', 'copy-address-btn'),
+        el('button', { id: 'receive-btn', class: 'btn-small icon', title: t('title_receive'), html: QR_ICON, onclick: renderReceive }),
         refreshBtn)),
     el('div', { class: 'card' },
       el('span', { class: 'label' }, t('label_balance')),

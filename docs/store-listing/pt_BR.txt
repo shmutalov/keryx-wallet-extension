@@ -1,0 +1,43 @@
+A Carteira Keryx é uma carteira de autocustódia para o navegador, feita para a Keryx Network (KRX), a BlockDAG minerada por GPU com inferência de IA on-chain. Envie e receba KRX, faça perguntas privadas a uma IA pagando em KRX e conecte-se a dApps da Keryx. Suas chaves nunca saem do seu dispositivo.
+
+POR QUE UMA EXTENSÃO DE NAVEGADOR
+• A um clique de qualquer aba: confira seu saldo, copie seu endereço para pagamentos do pool ou saques de corretoras e envie KRX.
+• Conecte-se a dApps da Keryx: os sites solicitam pagamentos e assinaturas pelo provedor window.keryx, e você aprova cada solicitação em uma janela da carteira.
+• Suas respostas privadas de IA ficam na sua carteira, criptografadas por conta.
+
+RECURSOS
+◈ Painel ao vivo: saldo em KRX com estimativa em USD, quantidade de UTXOs, status da rede e histórico completo de transações com links para o explorador
+➤ Enviar KRX: as transações são montadas e assinadas inteiramente no seu navegador (Schnorr BIP340, sighash no estilo Kaspa) e depois transmitidas
+▣ Receber KRX: seu endereço como código QR, pronto para escanear ou copiar
+✦ IA privada: escolha um modelo (LLMs de pesos abertos como Qwen, GLM, Gemma e Kimi) e veja quantos mineradores o atendem e quanto custa antes de confirmar. Sua pergunta é criptografada no navegador para que apenas os mineradores que atendem esse modelo possam lê-la, e a resposta volta criptografada para a sua carteira. Atualizada a cada upgrade da rede Keryx, incluindo o H15 (inferência verificável).
+⇄ Conexões com dApps: permissões por site, pagamentos, assinatura de mensagens, solicitações de IA e assinatura avançada de scripts (claim e refund de HTLC). Cada solicitação mostra o site, os valores e as saídas antes de você aprovar. Desconecte um site a qualquer momento nas Configurações.
+⊕ Criar ou importar: frase semente BIP39 de 24 palavras com uma etapa de backup guiada, ou restauração a partir de qualquer frase de 12 ou 24 palavras
+⧉ Várias contas: derive mais endereços de uma frase semente ou adicione outras frases, tudo protegido por uma única senha
+⌂ Catálogo de endereços: nomes salvos e destinos recentes são sugeridos enquanto você digita
+🌐 7 idiomas: English, Deutsch, Español, Français, Português (Brasil), Русский, 中文（简体）
+⚙ Seu próprio nó: conecte a carteira ao seu próprio nó ou indexador Keryx nas Configurações
+
+SEGURANÇA E PRIVACIDADE
+• As frases semente são geradas no seu dispositivo e criptografadas com a sua senha (PBKDF2-SHA256 com 600.000 iterações, depois AES-256-GCM). Chaves e senhas nunca são enviadas a lugar nenhum.
+• As chaves desbloqueadas ficam apenas na memória e são apagadas após 15 minutos de inatividade, quando você bloqueia a carteira ou quando o navegador é fechado.
+• Sem análises, sem rastreamento, sem contas, sem coleta de dados. O único servidor que a carteira contata é keryx-labs.com (a API pública do nó Keryx), ou um nó que você mesmo configurar.
+• Código aberto (licença ISC): https://github.com/shmutalov/keryx-wallet-extension
+
+PERGUNTAS FREQUENTES
+Esta é a carteira oficial da Keryx Labs?
+Não. A Carteira Keryx é uma carteira independente, criada pela comunidade e de código aberto. Sua frase semente também funciona na carteira web oficial da Keryx.
+
+Ela guarda Kaspa (KAS)?
+Não. A Keryx deriva da Kaspa, mas esta carteira guarda apenas KRX.
+
+Como recebo pagamentos de mineração?
+Copie seu endereço no painel e configure-o como endereço de pagamento no seu pool de mineração.
+
+Quanto custa uma pergunta privada para a IA?
+Cada modelo tem um preço fixo em KRX, mais uma pequena taxa de rede. A carteira mostra o total antes de você confirmar.
+
+Onde consigo KRX?
+Minere com uma GPU ou compre em uma corretora que liste KRX. Há links em Configurações → Sobre e suporte.
+
+AVISO
+A Carteira Keryx é fornecida no estado em que se encontra. Faça backup da sua frase semente: ela é a única forma de recuperar seus fundos. Nunca a compartilhe com ninguém e instale a Carteira Keryx apenas pela página oficial na loja.

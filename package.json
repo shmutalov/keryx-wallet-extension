@@ -1,6 +1,6 @@
 {
   "name": "keryx-wallet-extension",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "scripts": {
     "build": "node build.mjs",
     "test:e2e": "node scripts/popup-e2e.mjs",
@@ -20,7 +20,8 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
-    "jsdom": "^29.1.1"
+    "jsdom": "^29.1.1",
+    "jsqr": "1.4.0"
   },
   "type": "module"
 }

@@ -1,6 +1,6 @@
 # Privacy Policy — Keryx Wallet
 
-**Effective date: October 8, 2026**
+**Effective date: October 28, 2026**
 
 Keryx Wallet is a browser extension for the Keryx Network (KRX). It is designed so that your data never leaves your device.
 
@@ -38,6 +38,12 @@ So that Keryx applications can request payments and signatures, the extension ma
 - Reveals **nothing** about you or your wallet to a website until you approve that site's connection request in a wallet-controlled popup. Until then, a site cannot even tell whether you have a wallet configured.
 - After you connect a site, that site can see the connected account's address, public key, balance, and UTXO list, and may *request* transactions or signatures — every such request requires your explicit approval in a wallet popup that shows the requesting site and the full details.
 - Connections are stored only on your device and can be revoked at any time under **Settings → Connected sites**.
+
+## Links
+
+**Settings → About & support** links to this wallet's store page (to leave a review), its source code and issue tracker on GitHub, the Keryx miner download, and an exchange that lists KRX. A link opens in a normal browser tab only when you click it; the extension sends no data with it. Sites opened this way are third parties with their own privacy policies.
+
+The Receive screen's **Phone** QR code holds a link to your address's public page on the keryx-labs.com explorer. The extension doesn't open it; a phone that scans the code does, in its own browser.
 
 ## Clipboard
 

@@ -1,0 +1,43 @@
+Keryx Wallet is a self-custody browser wallet for the Keryx Network (KRX), the GPU-mined BlockDAG with on-chain AI inference. Send and receive KRX, ask private AI questions paid in KRX, and connect to Keryx dApps. Your keys never leave your device.
+
+WHY A BROWSER EXTENSION
+• One click from any tab: check your balance, copy your address for pool payouts or exchange withdrawals, and send KRX.
+• Connect to Keryx dApps: websites ask for payments and signatures through the window.keryx provider, and you approve each request in a wallet window.
+• Your private AI answers stay in your wallet, encrypted per account.
+
+FEATURES
+◈ Live dashboard: KRX balance with a USD estimate, UTXO count, network status and full transaction history with explorer links
+➤ Send KRX: transactions are built and signed entirely in your browser (BIP340 Schnorr, Kaspa-style sighash) and then broadcast
+▣ Receive KRX: your address as a QR code, ready to scan or copy
+✦ Private AI: choose a model (open-weight LLMs such as Qwen, GLM, Gemma and Kimi) and see how many miners serve it and what it costs before you confirm. Your prompt is encrypted in the browser so that only the miners serving that model can read it, and the answer is encrypted back to your wallet. Kept up to date with every Keryx network upgrade, including H15 verifiable inference.
+⇄ dApp connections: per-site permissions, payments, message signing, AI requests and advanced script signing (HTLC claim and refund). Every request shows the site, amounts and outputs before you approve it. Disconnect a site at any time in Settings.
+⊕ Create or import: a 24-word BIP39 seed phrase with a guided backup step, or restore from any 12- or 24-word phrase
+⧉ Multiple accounts: derive more addresses from one seed phrase or add separate ones, all protected by one password
+⌂ Address book: saved names and recent destinations are suggested as you type
+🌐 7 languages: English, Deutsch, Español, Français, Português (Brasil), Русский, 中文（简体）
+⚙ Your own node: point the wallet at your own Keryx node or indexer in Settings
+
+SECURITY AND PRIVACY
+• Seed phrases are generated on your device and encrypted with your password (PBKDF2-SHA256 with 600,000 iterations, then AES-256-GCM). Keys and passwords are never sent anywhere.
+• Unlocked keys live only in memory and are wiped after 15 minutes of inactivity, when you lock the wallet, or when the browser closes.
+• No analytics, no tracking, no accounts, no data collection. The only network host the wallet contacts is keryx-labs.com (the public Keryx node API), or a node you configure yourself.
+• Open source (ISC license): https://github.com/shmutalov/keryx-wallet-extension
+
+FAQ
+Is this the official Keryx Labs wallet?
+No. Keryx Wallet is an independent, community-built, open-source wallet. Your seed phrase also works in the official Keryx web wallet.
+
+Does it hold Kaspa (KAS)?
+No. Keryx is derived from Kaspa, but this wallet holds KRX only.
+
+How do I receive mining payouts?
+Copy your address from the dashboard and set it as the payout address in your mining pool.
+
+What does a private AI question cost?
+Each model has a fixed price in KRX, plus a small network fee. The wallet shows the total before you confirm.
+
+Where can I get KRX?
+Mine it with a GPU, or buy it on an exchange that lists KRX. Settings → About & support has links.
+
+DISCLAIMER
+Keryx Wallet is provided as-is. Back up your seed phrase: it is the only way to recover your funds. Never share it with anyone, and install Keryx Wallet only from its official store page.

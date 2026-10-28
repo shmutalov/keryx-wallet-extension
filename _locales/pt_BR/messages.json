@@ -1,6 +1,6 @@
 {
-  "ext_name": { "message": "Carteira Keryx" },
-  "ext_description": { "message": "Carteira do lado do cliente para a Keryx Network (KRX). Crie ou importe uma carteira e acompanhe seu saldo — as chaves nunca saem do seu dispositivo." },
+  "ext_name": { "message": "Carteira Keryx — KRX, dApps e IA privada" },
+  "ext_description": { "message": "Carteira Keryx (KRX): envie e receba KRX, use IA privada e conecte dApps. Código aberto; as chaves nunca saem do seu dispositivo." },
   "ext_action_title": { "message": "Carteira Keryx" },
 
   "btn_approve": { "message": "Aprovar" },
@@ -151,6 +151,16 @@
   "settings_backup_label": { "message": "Backup" },
   "settings_backup_btn": { "message": "⧉ Backup da frase semente" },
   "settings_backup_hint": { "message": "Revela uma frase semente após você digitar a senha novamente." },
+  "settings_about_label": { "message": "Sobre e suporte" },
+  "settings_rate": { "message": "★ Avaliar a Carteira Keryx" },
+  "settings_rate_hint": { "message": "Uma avaliação curta ajuda outros usuários de Keryx a encontrar uma carteira confiável." },
+  "settings_buy_krx": { "message": "Comprar KRX" },
+  "settings_mine_krx": { "message": "Minerar KRX" },
+  "settings_source": { "message": "Código-fonte" },
+  "settings_report_issue": { "message": "Relatar um problema" },
+  "settings_third_party_hint": { "message": "Corretoras são serviços de terceiros, sem vínculo com a Carteira Keryx." },
+  "settings_donate_label": { "message": "Apoiar o desenvolvimento" },
+  "settings_donate_hint": { "message": "Gorjetas em KRX financiam a manutenção e o suporte a cada atualização da rede desde o primeiro dia." },
   "settings_danger_zone": { "message": "Zona de perigo" },
   "settings_danger_hint": { "message": "Redefinir remove TODAS as contas e o cofre criptografado deste navegador. Os fundos só podem ser recuperados com as frases semente — certifique-se de que todas estejam com backup antes de continuar." },
 
@@ -262,5 +272,14 @@
   "dash_krx_address": { "message": "$1 — endereço KRX" },
   "dash_send": { "message": "Enviar KRX →" },
   "dash_inference": { "message": "Inferência de IA →" },
+  "title_receive": { "message": "Receber (código QR)" },
+  "title_receive_krx": { "message": "Receber KRX" },
+  "receive_qr_label": { "message": "Código QR do seu endereço KRX" },
+  "receive_mode_address": { "message": "Endereço" },
+  "receive_mode_phone": { "message": "Celular" },
+  "receive_hint_address": { "message": "O código de endereço padrão para apps de carteira. A câmera do iPhone não consegue copiá-lo; nesse caso, mude para “Celular”." },
+  "receive_hint_phone": { "message": "Abre este endereço no explorador da Keryx, no navegador do celular. Toque e segure o endereço para copiá-lo." },
+  "receive_only_krx": { "message": "Envie para este endereço apenas KRX da rede Keryx." },
+  "receive_qr_label_phone": { "message": "Código QR com link para o seu endereço no explorador da Keryx" },
   "dash_consolidate": { "message": "Consolidar — em breve na próxima versão." }
 }
