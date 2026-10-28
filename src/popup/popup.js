@@ -21,6 +21,9 @@ import {
   getModelByIdHex,
   inferenceRewardSompi,
   modelPriceSompi,
+  isH15Active,
+  safePromptBytes,
+  CONTEXT_FLOORS,
 } from '../lib/models.js';
 import { submitInference, checkAnswer, inferenceEra } from '../lib/inference.js';
 import { loadRequests, updateRequest } from '../lib/requests.js';
@@ -605,6 +608,7 @@ function renderInference() {
   let challengesByPrefix = new Map();
   let busy = false;
   let era = null; // null until the first /info: 'plain' | 'switching' | 'sealed'
+  let h15 = false; // H15 live: the context rule applies (and requests seal under key schedule 2)
   let mine = []; // this account's sealed requests (requests.js), newest first
   let polling = false;
   const sealed = () => era === 'sealed';
@@ -618,6 +622,7 @@ function renderInference() {
     id: 'inf-prompt', rows: '4', placeholder: t('inf_prompt_placeholder'),
   });
   const charCount = el('span', { class: 'tx-count' }, t('inf_chars', '0'));
+  const contextLine = el('div', { id: 'inf-context', class: 'hint', style: 'text-align:left;color:#ff8c00;display:none' });
   const tokensVal = el('span', { id: 'inf-tokens-val', style: 'color:var(--mx-bright)' }, '256');
   const tokensSlider = el('input', {
     id: 'inf-tokens', type: 'range', min: '64', max: '4096', step: '64', value: '256',
@@ -634,6 +639,9 @@ function renderInference() {
   const mineList = el('div', { id: 'inf-mine', class: 'stack' });
   const feedList = el('div', { id: 'inf-feed', class: 'stack' },
     el('div', { class: 'loading' }, t('common_loading')));
+  // API hosts leave sealed requests out of /infer: from H14 the feed only holds older public ones.
+  const feedNote = el('p', { id: 'inf-feed-note', class: 'hint', style: 'text-align:left;margin-top:6px;display:none' },
+    t('inf_feed_sealed_note'));
   const footer = el('p', { class: 'hint' }, t('inf_footer'));
 
   const toSompi = (v) => parseKRX((v || '0').trim().replace(',', '.'));
@@ -701,6 +709,16 @@ function renderInference() {
       ? t('inf_chars', promptInput.value.length)
       : t('inf_too_long', promptLimit().toLocaleString('en-US'));
     charCount.style.color = fits ? '' : 'var(--mx-error)';
+    // H15 context rule: a prompt that may overflow the tier's context floor can
+    // lapse unanswered. Bytes overstate tokens, so warn rather than block.
+    const model = getModel(modelSelect.value);
+    const safe = safePromptBytes(model, maxTokens());
+    const risky = h15 && fits && promptBytes() > safe;
+    contextLine.style.display = risky ? '' : 'none';
+    if (risky) {
+      contextLine.textContent = t('inf_context_warn', model.name,
+        CONTEXT_FLOORS[model.tier].toLocaleString('en-US'), maxTokens(), safe.toLocaleString('en-US'));
+    }
     const ok = !busy && (era === 'plain' || era === 'sealed') && promptInput.value.trim().length > 0
       && fits && funded && count !== 0;
     if (ok) submit.removeAttribute('disabled');
@@ -733,13 +751,19 @@ function renderInference() {
     } catch {
       return; // keep the last known era; submit re-checks it anyway
     }
-    const next = inferenceEra(info?.last_daa_score ?? 0);
+    const daa = info?.last_daa_score ?? 0;
+    if (isH15Active(daa) !== h15) {
+      h15 = isH15Active(daa);
+      validate();
+    }
+    const next = inferenceEra(daa);
     if (next === era) return;
     const crossed = (era === 'sealed') !== (next === 'sealed');
     era = next;
     eraBox.style.display = era === 'switching' ? '' : 'none';
     privacyLine.style.display = sealed() ? '' : 'none';
     footer.textContent = sealed() ? t('inf_footer_sealed') : t('inf_footer');
+    feedNote.style.display = sealed() ? '' : 'none';
     if (crossed || !modelSelect.options.length) fillModels();
     renderMine();
     refreshEstimate();
@@ -971,6 +995,7 @@ function renderInference() {
         el('span', { class: 'tx-count', style: 'white-space:nowrap' }, t('inf_max_tokens_prefix'), tokensVal),
         tokensSlider,
         charCount),
+      contextLine,
       el('div', { class: 'send-row', style: 'margin-top:10px' },
         el('div', { class: 'field', style: 'width:110px' },
           el('span', { class: 'label' }, t('inf_priority_fee')),
@@ -986,6 +1011,7 @@ function renderInference() {
       el('div', { class: 'tx-head' },
         el('span', { class: 'label', style: 'margin:0' }, t('inf_live_feed')),
         el('span', { class: 'tx-count' }, t('inf_autorefresh'))),
+      feedNote,
       feedList
     ),
     footer

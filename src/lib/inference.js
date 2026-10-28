@@ -3,17 +3,21 @@
 //
 // Before H14 the prompt travels in plaintext; from H14 (keryx-node
 // `private_inference_activation`) it is sealed to the miners of the model's
-// tier and the answer comes back sealed to this wallet (private.js). A sealed
-// request is recorded per account (requests.js) so its answer can be opened
-// whenever the popup is next open.
+// tier and the answer comes back sealed to this wallet (private.js) — under
+// key schedule 1 until H15, schedule 2 from H15, as keryx-cli does (miners
+// that predate schedule 2 cannot open it; H15 makes them upgrade). A sealed
+// request is recorded per account with its schedule (requests.js) so its
+// answer can be opened whenever the popup is next open.
 
 import { api } from './api.js';
 import { buildInferencePayload, buildInferenceTx, selectInferenceUtxos } from './tx.js';
-import { getModel, isH14Active, H14_ACTIVATION_DAA } from './models.js';
+import { getModel, isH14Active, isH15Active, H14_ACTIVATION_DAA } from './models.js';
 import {
   cohortSeed,
-  deriveRootKey,
+  deriveRequestSecret,
   hexBytes,
+  KEY_SCHEDULE_V1,
+  KEY_SCHEDULE_V2,
   maxRequestPayloadLen,
   openResponse,
   sealRecipients,
@@ -36,6 +40,11 @@ export const ANSWER_TIMEOUT_MS = 15 * 60 * 1000;
 export function inferenceEra(daaScore) {
   if (isH14Active(daaScore)) return 'sealed';
   return daaScore >= H14_ACTIVATION_DAA - H14_SWITCH_MARGIN_DAA ? 'switching' : 'plain';
+}
+
+/** The key schedule a request sealed at `daaScore` uses: 2 from H15, else 1. */
+export function keyScheduleAt(daaScore) {
+  return isH15Active(daaScore) ? KEY_SCHEDULE_V2 : KEY_SCHEDULE_V1;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -93,9 +102,10 @@ export async function submitInference({ wallet, modelKey, prompt, maxTokens, rew
   }
 
   // The first input seeds the target cohort the mempool checks coverage
-  // against, and the request's root key.
+  // against, and the request's secret.
   const seed = cohortSeed(selected[0].transaction_id, selected[0].index);
-  const rootKey = deriveRootKey(wallet.privateKeyHex, seed);
+  const secret = deriveRequestSecret(wallet.privateKeyHex, seed);
+  const schedule = keyScheduleAt(daa);
   for (let attempt = 0; ; attempt++) {
     onStep('providers');
     const providers = await providersOf(model);
@@ -111,7 +121,8 @@ export async function submitInference({ wallet, modelKey, prompt, maxTokens, rew
       priorityFeeSompi: feeSompi,
       prompt,
       recipientsHex,
-      rootKey,
+      secret,
+      schedule,
       maxPayload: maxRequestPayloadLen(selected.length),
     }));
     onStep('broadcasting');
@@ -120,7 +131,7 @@ export async function submitInference({ wallet, modelKey, prompt, maxTokens, rew
       res = await api.broadcast(built.tx);
     } catch (e) {
       // A miner joined the cohort between the providers read and admission:
-      // re-read it once and seal again (same inputs, same root key).
+      // re-read it once and seal again (same inputs, same secret).
       if (attempt === 0 && /not sealed to \d+ of the \d+ escrow keys/.test(String(e?.message))) {
         await sleep(3000);
         continue;
@@ -131,6 +142,7 @@ export async function submitInference({ wallet, modelKey, prompt, maxTokens, rew
       await addRequest(wallet, {
         id: res.transaction_id,
         seed: toHex(seed),
+        schedule,
         model: model.key,
         maxTokens,
         rewardSompi,
@@ -165,7 +177,8 @@ export async function checkAnswer(wallet, record) {
     res = null; // not indexed yet, or the host has no indexer
   }
   const responses = Array.isArray(res?.sealed_responses) ? res.sealed_responses : [];
-  const rootKey = deriveRootKey(wallet.privateKeyHex, hexBytes(record.seed, 36));
+  const secret = deriveRequestSecret(wallet.privateKeyHex, hexBytes(record.seed, 36));
+  const schedule = record.schedule ?? KEY_SCHEDULE_V1; // records from v0.7.0 carry no schedule: they are all schedule 1
   let note = null;
   for (const r of responses) {
     let body;
@@ -175,7 +188,7 @@ export async function checkAnswer(wallet, record) {
       continue;
     }
     try {
-      const answer = openResponse(rootKey, record.id, r.responder_pubkey, body);
+      const answer = openResponse(secret, schedule, record.id, r.responder_pubkey, body);
       return { status: 'answered', answer, responder: r.responder_pubkey, answeredAt: Date.now(), responses: responses.length };
     } catch {
       note = new TextDecoder().decode(body).slice(0, 300);

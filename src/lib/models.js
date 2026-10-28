@@ -27,6 +27,33 @@ export const H14_ACTIVATION_DAA = 121985000;
 /** Whether the H14 rules (sealed prompts, flat rewards, tier-3 swap) govern a request at `daaScore`. */
 export const isH14Active = (daaScore) => daaScore >= H14_ACTIVATION_DAA;
 
+/**
+ * keryx-node `verifiable_inference_activation` on mainnet (H15, node v1.6.5+):
+ * requests are sealed under key schedule 2, answers carry traces (stage 2: the
+ * token ids ride inside the sealed answer), and the context rule applies.
+ * Lineup and prices are unchanged.
+ */
+export const H15_ACTIVATION_DAA = 140115000;
+
+export const isH15Active = (daaScore) => daaScore >= H15_ACTIVATION_DAA;
+
+/** Context floor of each tier, in tokens: the context a responder is held to (keryx-node CONTEXT_FLOORS_H14). */
+export const CONTEXT_FLOORS = [8192, 32768, 32768, 32768, 32768];
+/** Positions the chat template and the request prefix add to a prompt, at most (CONTEXT_OVERHEAD_TOKENS). */
+export const CONTEXT_OVERHEAD_TOKENS = 512;
+
+/**
+ * Longest prompt, in bytes, sure to fit `model`'s context floor under
+ * `maxTokens` — a token spans at least one byte (keryx-node `safe_prompt_len`).
+ * From H15, when a longer prompt goes unanswered and no responder proves it
+ * fits, the silent miners are excused: the request may simply lapse.
+ */
+export function safePromptBytes(model, maxTokens) {
+  const floor = CONTEXT_FLOORS[model?.tier];
+  if (floor === undefined) return Infinity;
+  return Math.max(0, floor - (maxTokens + CONTEXT_OVERHEAD_TOKENS));
+}
+
 export const INFERENCE_MODELS = [
   {
     key: 'qwen3.5-9b-abliterated',

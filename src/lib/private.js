@@ -18,16 +18,28 @@
 // Keys: ss_i = SHA-256(compressed ECDH(e, lift_x(R_i))) (libsecp default),
 // kek_i = HKDF(salt, ss_i, "kek" ‖ E ‖ R_i) wraps the root key under the
 // 52-byte request header as AAD; k_prompt = HKDF(salt, root, "prompt") with
-// AAD = request header ‖ envelope header; k_response = HKDF(salt, root,
-// "response" ‖ responder key) with AAD = request id ‖ responder key. The
-// request id is the AiRequest's tx id (H8 request identity).
+// AAD = request header ‖ envelope header. Answers are sealed with AAD =
+// request id ‖ responder key; the request id is the AiRequest's tx id (H8
+// request identity). Two key schedules, neither on the wire (a responder finds
+// the one whose KEK authenticates its wrapped root key):
+//   1 (H14): salt "KeryxPrivateInferenceV1", the secret IS the root key, `e`
+//     random, k_response = HKDF(root, "response" ‖ R_i) — derivable by every
+//     recipient, so a miner could re-seal a competitor's answer as its own.
+//   2 (keryx-node 1.6.5+, sealed from H15): salt "KeryxPrivateInferenceV2",
+//     the secret is a seed: root = HKDF(seed, "root"), e = the first valid
+//     scalar of HKDF(seed, "ephemeral" ‖ ctr), k_response = HKDF(ss_i ‖ root,
+//     "response" ‖ R_i) — only responder i and the requester know ss_i.
 //
-// The root key is derived, not drawn: HKDF(salt "KeryxChatRootKeyV1",
-// ikm = account private key, info = "root" ‖ cohort seed), exactly as the
-// keryx-labs.com /infer page does. The cohort seed is the outpoint the first
-// input spends, which no other transaction can spend, so every request gets
-// its own key — and both clients can open each other's answers from the
-// seed phrase alone, with no secret stored anywhere.
+// The request secret is derived, not drawn: HKDF(salt "KeryxChatRootKeyV1",
+// ikm = account private key, info = "root" ‖ cohort seed), as the
+// keryx-labs.com /infer page derives its (schedule-1) root key. The cohort
+// seed is the outpoint the first input spends, which no other transaction can
+// spend, so every request gets its own secret, used under exactly one
+// schedule, and no secret is ever stored.
+//
+// From H15 (stage-2 traces) the sealed answer plaintext is `text ‖ token ids
+// (u32le) ‖ count (u32le) ‖ "KXTK"` (keryx-node verifiable-inference/src/
+// answer.rs); openResponse returns the text only.
 
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
@@ -57,13 +69,20 @@ const ENTRY_LEN = 32 + 32 + TAG_LEN; // escrow key + wrapped root key
 const REQUEST_HEADER_LEN = PRIVATE_MAGIC.length + 1 + 33 + NONCE_LEN + 1;
 const RESPONSE_HEADER_LEN = PRIVATE_MAGIC.length + 1 + NONCE_LEN;
 
-const KDF_SALT = utf8('KeryxPrivateInferenceV1');
+/** Key schedule of the H14 clients: the request secret is the root key. */
+export const KEY_SCHEDULE_V1 = 1;
+/** Key schedule 2: the request secret seeds the root key and the ephemeral key. */
+export const KEY_SCHEDULE_V2 = 2;
+
+const KDF_SALTS = { [KEY_SCHEDULE_V1]: utf8('KeryxPrivateInferenceV1'), [KEY_SCHEDULE_V2]: utf8('KeryxPrivateInferenceV2') };
 const INFO_KEK = utf8('kek');
 const INFO_PROMPT = utf8('prompt');
 const INFO_RESPONSE = utf8('response');
+const INFO_EPHEMERAL = utf8('ephemeral');
 const COHORT_DOMAIN = utf8('KeryxPrivateCohortV1');
-const ROOT_SALT = utf8('KeryxChatRootKeyV1');
+const SECRET_SALT = utf8('KeryxChatRootKeyV1');
 const INFO_ROOT = utf8('root');
+const TOKENS_MAGIC = utf8('KXTK');
 
 function concat(...parts) {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -97,7 +116,42 @@ export function toHex(bytes) {
   return s;
 }
 
-const kdf = (ikm, ...info) => hkdf(sha256, ikm, KDF_SALT, concat(...info), 32);
+function saltOf(schedule) {
+  const salt = KDF_SALTS[schedule];
+  if (!salt) throw new Error(`Unknown key schedule: ${schedule}`);
+  return salt;
+}
+
+const kdf = (schedule, ikm, ...info) => hkdf(sha256, ikm, saltOf(schedule), concat(...info), 32);
+
+/** The root key the recipients unwrap. */
+const rootKeyOf = (secret, schedule) => (schedule === KEY_SCHEDULE_V1 ? secret : kdf(KEY_SCHEDULE_V2, secret, INFO_ROOT));
+
+/** Key schedule 2's ephemeral secret: the first valid scalar of HKDF(seed, "ephemeral" ‖ ctr). */
+function ephemeralV2(secret) {
+  for (let ctr = 0; ctr <= 255; ctr++) {
+    const k = kdf(KEY_SCHEDULE_V2, secret, INFO_EPHEMERAL, new Uint8Array([ctr]));
+    if (secp256k1.utils.isValidSecretKey(k)) return k;
+  }
+  throw new Error('No valid ephemeral scalar'); // probability ~2^-128 per try
+}
+
+/** BIP-340 even-Y lift of an x-only key, compressed. */
+function liftX(key) {
+  try {
+    return secp256k1.Point.fromBytes(concat(new Uint8Array([0x02]), key)).toBytes(true);
+  } catch {
+    throw new Error('Invalid escrow key');
+  }
+}
+
+const ecdh = (secretKey, point) => sha256(secp256k1.getSharedSecret(secretKey, point, true));
+
+function responseKey(schedule, shared, rootKey, responder) {
+  return schedule === KEY_SCHEDULE_V1
+    ? kdf(KEY_SCHEDULE_V1, rootKey, INFO_RESPONSE, responder)
+    : kdf(KEY_SCHEDULE_V2, concat(shared, rootKey), INFO_RESPONSE, responder);
+}
 
 const hasMagic = (bytes) => bytes.length >= PRIVATE_MAGIC.length && compare(bytes.subarray(0, 4), PRIVATE_MAGIC) === 0;
 
@@ -156,9 +210,13 @@ export function sealRecipients(seed, cohortHex, windowHex = []) {
   return [...target, ...extra].sort(compare).map(toHex);
 }
 
-/** The request's root key, derived like keryx-labs.com /infer: HKDF(privkey, "root" ‖ seed). */
-export function deriveRootKey(privateKeyHex, seed) {
-  return hkdf(sha256, hexBytes(privateKeyHex, 32), ROOT_SALT, concat(INFO_ROOT, seed), 32);
+/**
+ * The request's secret, derived like keryx-labs.com /infer derives its root key:
+ * HKDF(salt "KeryxChatRootKeyV1", privkey, "root" ‖ cohort seed). Under key
+ * schedule 1 it is the root key, under schedule 2 the seed.
+ */
+export function deriveRequestSecret(privateKeyHex, seed) {
+  return hkdf(sha256, hexBytes(privateKeyHex, 32), SECRET_SALT, concat(INFO_ROOT, seed), 32);
 }
 
 /** Largest prompt (bytes) an envelope naming `n` recipients fits in a payload of `maxPayload`. */
@@ -190,38 +248,36 @@ export function isSealed(bytes) {
 
 /**
  * Requester side: the AiRequest payload (hex) carrying `prompt` sealed to
- * `recipientsHex` (escrow keys, any order). `rootKey` comes from deriveRootKey.
+ * `recipientsHex` (escrow keys, any order) under key `schedule`. `secret`
+ * comes from deriveRequestSecret.
  */
-export function sealRequest({ modelIdHex, maxTokens, rewardSompi, priorityFeeSompi, prompt, recipientsHex, rootKey, maxPayload }) {
+export function sealRequest({ modelIdHex, maxTokens, rewardSompi, priorityFeeSompi, prompt, recipientsHex, secret, schedule, maxPayload }) {
+  const salt = saltOf(schedule);
   const keys = uniqueKeys(recipientsHex);
   if (keys.length === 0) throw new Error('No recipients: no miner of this tier is eligible right now');
   if (keys.length > MAX_PRIVATE_RECIPIENTS) throw new Error(`Too many recipients: ${keys.length}`);
-  if (rootKey?.length !== 32) throw new Error('Root key must be 32 bytes');
-  const points = keys.map((k) => {
-    try {
-      return secp256k1.Point.fromBytes(concat(new Uint8Array([0x02]), k)).toBytes(true); // BIP-340 even-Y lift
-    } catch {
-      throw new Error('Invalid escrow key');
-    }
-  });
+  if (secret?.length !== 32) throw new Error('Request secret must be 32 bytes');
+  const points = keys.map(liftX);
   const message = typeof prompt === 'string' ? utf8(prompt) : prompt;
   const maxPrompt = maxPrivatePromptLen(keys.length, maxPayload);
   if (message.length > maxPrompt) {
     throw new Error(`Prompt of ${message.length} bytes does not fit (maximum ${maxPrompt} for ${keys.length} recipients)`);
   }
 
+  const rootKey = rootKeyOf(secret, schedule);
   const header = requestHeader(modelIdHex, maxTokens, rewardSompi, priorityFeeSompi);
   const nonce = randomBytes(NONCE_LEN);
-  const ephemeral = secp256k1.utils.randomSecretKey();
+  // Schedule 2 derives `e` from the secret, so the requester can recompute it for the answers.
+  const ephemeral = schedule === KEY_SCHEDULE_V2 ? ephemeralV2(secret) : secp256k1.utils.randomSecretKey();
   const E = secp256k1.getPublicKey(ephemeral, true);
   const entries = keys.map((key, i) => {
-    const ss = sha256(secp256k1.getSharedSecret(ephemeral, points[i], true));
-    const kek = kdf(ss, INFO_KEK, E, key);
+    const kek = hkdf(sha256, ecdh(ephemeral, points[i]), salt, concat(INFO_KEK, E, key), 32);
     return concat(key, chacha20poly1305(kek, nonce, header).encrypt(rootKey));
   });
   const envelopeHeader = concat(PRIVATE_MAGIC, new Uint8Array([PRIVATE_VERSION]), E, nonce,
     new Uint8Array([keys.length]), ...entries);
-  const ciphertext = chacha20poly1305(kdf(rootKey, INFO_PROMPT), nonce, concat(header, envelopeHeader)).encrypt(message);
+  const kPrompt = kdf(schedule, rootKey, INFO_PROMPT);
+  const ciphertext = chacha20poly1305(kPrompt, nonce, concat(header, envelopeHeader)).encrypt(message);
   return toHex(concat(header, envelopeHeader, ciphertext));
 }
 
@@ -246,31 +302,53 @@ function parseRequestEnvelope(payload) {
   };
 }
 
-/** Requester side: the plaintext of one's own sealed request, from its payload bytes. */
-export function openOwnPrompt(rootKey, payload) {
-  const env = parseRequestEnvelope(payload);
+function decryptPrompt(schedule, rootKey, env) {
   const aad = concat(env.header, env.envelopeHeader);
-  return new TextDecoder().decode(chacha20poly1305(kdf(rootKey, INFO_PROMPT), env.nonce, aad).decrypt(env.ciphertext));
+  return new TextDecoder().decode(chacha20poly1305(kdf(schedule, rootKey, INFO_PROMPT), env.nonce, aad).decrypt(env.ciphertext));
+}
+
+/** Requester side: the plaintext of one's own sealed request, from its payload bytes. */
+export function openOwnPrompt(secret, schedule, payload) {
+  return decryptPrompt(schedule, rootKeyOf(secret, schedule), parseRequestEnvelope(payload));
 }
 
 /**
- * Requester side: the answer a responder sealed for request `requestIdHex`
- * (the AiRequest tx id). Throws when the body does not open — a responder
- * that could not read the request answers with a plaintext note instead.
+ * The text of a sealed answer's plaintext: from H15 a stage-2 answer appends
+ * the generated token ids, `text ‖ ids (u32le) ‖ count (u32le) ‖ "KXTK"`
+ * (keryx-node verifiable-inference/src/answer.rs `decode`); anything else is
+ * all text.
  */
-export function openResponse(rootKey, requestIdHex, responderHex, body) {
+export function answerText(plain) {
+  const body = plain.length - 8;
+  if (body < 0 || compare(plain.subarray(body + 4), TOKENS_MAGIC) !== 0) return plain;
+  const n = new DataView(plain.buffer, plain.byteOffset + body, 4).getUint32(0, true);
+  const textLen = body - 4 * n;
+  return textLen < 0 ? plain : plain.subarray(0, textLen);
+}
+
+/**
+ * Requester side: the answer text a responder sealed for request
+ * `requestIdHex` (the AiRequest tx id). Throws when the body does not open —
+ * a responder that could not read the request answers with a plaintext note.
+ */
+export function openResponse(secret, schedule, requestIdHex, responderHex, body) {
   if (!hasMagic(body) || body.length < RESPONSE_HEADER_LEN + TAG_LEN) throw new Error('Not a private-inference envelope');
   if (body[4] !== PRIVATE_VERSION) throw new Error('Unsupported envelope version');
   const responder = hexBytes(responderHex, 32);
-  const key = kdf(rootKey, INFO_RESPONSE, responder);
+  const shared = schedule === KEY_SCHEDULE_V2 ? ecdh(ephemeralV2(secret), liftX(responder)) : null;
+  const key = responseKey(schedule, shared, rootKeyOf(secret, schedule), responder);
   const aad = concat(hexBytes(requestIdHex, 32), responder);
   const nonce = body.subarray(PRIVATE_MAGIC.length + 1, RESPONSE_HEADER_LEN);
-  return new TextDecoder().decode(chacha20poly1305(key, nonce, aad).decrypt(body.subarray(RESPONSE_HEADER_LEN)));
+  const plain = chacha20poly1305(key, nonce, aad).decrypt(body.subarray(RESPONSE_HEADER_LEN));
+  return new TextDecoder().decode(answerText(plain));
 }
 
 // --- responder side (what a tier miner does) — used by the test suites ----------
 
-/** Miner side: opens a sealed request with its escrow secret → { prompt, rootKey }. */
+/**
+ * Miner side: opens a sealed request of either key schedule with its escrow
+ * secret → { prompt, schedule, responseKey, recipients }.
+ */
 export function openRequest(payload, escrowSecretHex) {
   const env = parseRequestEnvelope(payload);
   let sk = hexBytes(escrowSecretHex, 32);
@@ -283,18 +361,32 @@ export function openRequest(payload, escrowSecretHex) {
     const n = secp256k1.Point.CURVE().n;
     sk = hexBytes((n - BigInt('0x' + toHex(sk))).toString(16).padStart(64, '0'), 32);
   }
-  const ss = sha256(secp256k1.getSharedSecret(sk, env.ephemeral, true));
-  const rootKey = chacha20poly1305(kdf(ss, INFO_KEK, env.ephemeral, mine), env.nonce, env.header).decrypt(entry.wrapped);
-  const aad = concat(env.header, env.envelopeHeader);
-  const prompt = new TextDecoder().decode(chacha20poly1305(kdf(rootKey, INFO_PROMPT), env.nonce, aad).decrypt(env.ciphertext));
-  return { prompt, rootKey, recipients: env.recipients.map((r) => toHex(r.key)) };
+  const shared = ecdh(sk, env.ephemeral);
+  // The schedule is the one whose KEK authenticates the wrapped root key (schedule 2 first).
+  for (const schedule of [KEY_SCHEDULE_V2, KEY_SCHEDULE_V1]) {
+    let rootKey;
+    try {
+      const kek = hkdf(sha256, shared, saltOf(schedule), concat(INFO_KEK, env.ephemeral, mine), 32);
+      rootKey = chacha20poly1305(kek, env.nonce, env.header).decrypt(entry.wrapped);
+    } catch {
+      continue;
+    }
+    return {
+      prompt: decryptPrompt(schedule, rootKey, env),
+      schedule,
+      responseKey: responseKey(schedule, shared, rootKey, mine),
+      recipients: env.recipients.map((r) => toHex(r.key)),
+    };
+  }
+  throw new Error('Authentication failed: wrong key or tampered request');
 }
 
-/** Miner side: seals `answer` for the requester (the AiResponse inline body). */
-export function sealResponse(rootKey, requestIdHex, responderHex, answer) {
+/** Miner side: seals `answer` (text or bytes) under the key openRequest returned (the AiResponse inline body). */
+export function sealResponse(responseKeyBytes, requestIdHex, responderHex, answer) {
   const responder = hexBytes(responderHex, 32);
   const nonce = randomBytes(NONCE_LEN);
   const aad = concat(hexBytes(requestIdHex, 32), responder);
-  const ct = chacha20poly1305(kdf(rootKey, INFO_RESPONSE, responder), nonce, aad).encrypt(utf8(answer));
+  const plain = typeof answer === 'string' ? utf8(answer) : answer;
+  const ct = chacha20poly1305(responseKeyBytes, nonce, aad).encrypt(plain);
   return concat(PRIVATE_MAGIC, new Uint8Array([PRIVATE_VERSION]), nonce, ct);
 }

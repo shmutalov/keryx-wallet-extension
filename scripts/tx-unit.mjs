@@ -25,12 +25,17 @@ import {
   getModel,
   selectableModels,
   H14_ACTIVATION_DAA,
+  H15_ACTIVATION_DAA,
+  safePromptBytes,
 } from '../src/lib/models.js';
 import {
   cohortSeed,
   cohortRank,
-  deriveRootKey,
+  answerText,
+  deriveRequestSecret,
   isSealed,
+  KEY_SCHEDULE_V1,
+  KEY_SCHEDULE_V2,
   maxPrivatePromptLen,
   maxRequestPayloadLen,
   openOwnPrompt,
@@ -42,8 +47,11 @@ import {
   sealResponse,
   toHex,
 } from '../src/lib/private.js';
-import { inferenceEra, H14_SWITCH_MARGIN_DAA } from '../src/lib/inference.js';
+import { inferenceEra, keyScheduleAt, H14_SWITCH_MARGIN_DAA } from '../src/lib/inference.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
+
+const concat2 = (a, b) => { const o = new Uint8Array(a.length + b.length); o.set(a); o.set(b, a.length); return o; };
 
 let failures = 0;
 let n = 0;
@@ -270,40 +278,92 @@ check('era: plaintext, then a no-send margin, then sealed at H14_ACTIVATION_DAA'
   inferenceEra(H14_ACTIVATION_DAA - 1) === 'switching' &&
   inferenceEra(H14_ACTIVATION_DAA) === 'sealed');
 
-// --- H14 private inference envelopes, pinned to vectors from keryx-node's own
-// inference/src/private.rs (seeded rng) and keryx-labs.com's /infer module ---
+// --- private inference envelopes (H14 key schedule 1, H15 key schedule 2), pinned to
+// vectors from keryx-node's own inference/src/private.rs (seeded rng) and
+// keryx-labs.com's /infer module ---
 const ESCROW = ['11', '22', '33'].map((b) => b.repeat(32));
 const ESCROW_PUB = [
   '4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa',
   '466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27',
   '3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1',
 ];
-// seal_request_with_rng(gemma, 256, 1.5 KRX, 0.3 KRX, "vector prompt", [pub0, pub1], StdRng(7))
-const NODE_REQUEST = hexToBytes('399984045600f7d58d1b2cf01e6a4bf466fa15c7ac31bd0dd1a71e003b617cc60001000080d1f0080000000080c3c90100000000004b58500102ad4063e56d12d439afe71e1837f1ce9c435c8b2a9c959b339f6e8e003e7150d3b621629ead61c245e06bb0bc02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27aabdb06ee8345e31bf9f9898d2930d99fd276120ef40e474ff48a3fbbc7e1c57bb634d4ad730412af408bd481ff198424f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aae313f16b0353c79b31fcd28ab79564e3c5f9f6a651ff9c2215b56724a8f486862c713d8516d3ee4045795b69387f4faa0bd1222917019e5806b4b59ed611243dc35550955b9de8457ae0c06f53');
-const NODE_ROOT = hexToBytes('befba86ae9e0c207865f7e24e8349d4ecdbc8b0f4632842499a0dfa60568e28a');
-// seal_response_with_rng(NODE_ROOT, ab×32, pub1, "vector answer", StdRng(3))
-const NODE_BODY = hexToBytes('004b585001ecd9c4a53ea15f18447b08fb48318320b5b9b8062bc2d149dbcfd33862fa57e9b31d3ebe95ff5bf451');
 check('escrow keys used by the vectors (the first has an odd-Y full key)', ESCROW.every((sk, i) =>
   toHex(secp256k1.getPublicKey(hexToBytes(sk), true).subarray(1)) === ESCROW_PUB[i]) &&
   secp256k1.getPublicKey(hexToBytes(ESCROW[0]), true)[0] === 0x03);
-check('requester opens its own node-sealed prompt', openOwnPrompt(NODE_ROOT, NODE_REQUEST) === 'vector prompt');
-check('both named miners open the node-sealed request and recover the root key', [0, 1].every((i) => {
-  const opened = openRequest(NODE_REQUEST, ESCROW[i]);
-  return opened.prompt === 'vector prompt' && toHex(opened.rootKey) === toHex(NODE_ROOT);
+
+// Schedule 1 (v1.6.4): seal_request_with_rng(gemma, 256, 1.5 KRX, 0.3 KRX, "vector prompt", [pub0, pub1], StdRng(7))
+const NODE_V1_REQUEST = hexToBytes('399984045600f7d58d1b2cf01e6a4bf466fa15c7ac31bd0dd1a71e003b617cc60001000080d1f0080000000080c3c90100000000004b58500102ad4063e56d12d439afe71e1837f1ce9c435c8b2a9c959b339f6e8e003e7150d3b621629ead61c245e06bb0bc02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27aabdb06ee8345e31bf9f9898d2930d99fd276120ef40e474ff48a3fbbc7e1c57bb634d4ad730412af408bd481ff198424f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aae313f16b0353c79b31fcd28ab79564e3c5f9f6a651ff9c2215b56724a8f486862c713d8516d3ee4045795b69387f4faa0bd1222917019e5806b4b59ed611243dc35550955b9de8457ae0c06f53');
+const NODE_V1_ROOT = hexToBytes('befba86ae9e0c207865f7e24e8349d4ecdbc8b0f4632842499a0dfa60568e28a');
+// seal_response_with_rng (schedule-1 key of pub1), ab×32, "vector answer", StdRng(3)
+const NODE_V1_BODY = hexToBytes('004b585001ecd9c4a53ea15f18447b08fb48318320b5b9b8062bc2d149dbcfd33862fa57e9b31d3ebe95ff5bf451');
+check('schedule 1: requester opens its own node-sealed prompt', openOwnPrompt(NODE_V1_ROOT, KEY_SCHEDULE_V1, NODE_V1_REQUEST) === 'vector prompt');
+check('schedule 1: both named miners open the node-sealed request as schedule 1', [0, 1].every((i) => {
+  const opened = openRequest(NODE_V1_REQUEST, ESCROW[i]);
+  return opened.prompt === 'vector prompt' && opened.schedule === KEY_SCHEDULE_V1;
 }));
-check('a miner the request does not name cannot open it', throws(() => openRequest(NODE_REQUEST, ESCROW[2]), 'not among'));
-check('node-sealed answer opens for its request id and responder',
-  openResponse(NODE_ROOT, 'ab'.repeat(32), ESCROW_PUB[1], NODE_BODY) === 'vector answer');
-check('the answer is bound to responder key and request id',
-  throws(() => openResponse(NODE_ROOT, 'ab'.repeat(32), ESCROW_PUB[0], NODE_BODY)) &&
-  throws(() => openResponse(NODE_ROOT, 'ac'.repeat(32), ESCROW_PUB[1], NODE_BODY)));
-check('a plaintext "could not open" note is not an envelope',
-  throws(() => openResponse(NODE_ROOT, 'ab'.repeat(32), ESCROW_PUB[1], new TextEncoder().encode('could not open')), 'Not a private'));
+check('a miner the request does not name cannot open it', throws(() => openRequest(NODE_V1_REQUEST, ESCROW[2]), 'not among'));
+check('schedule 1: node-sealed answer opens for its request id and responder',
+  openResponse(NODE_V1_ROOT, KEY_SCHEDULE_V1, 'ab'.repeat(32), ESCROW_PUB[1], NODE_V1_BODY) === 'vector answer');
+check('the answer is bound to responder key, request id and schedule',
+  throws(() => openResponse(NODE_V1_ROOT, KEY_SCHEDULE_V1, 'ab'.repeat(32), ESCROW_PUB[0], NODE_V1_BODY)) &&
+  throws(() => openResponse(NODE_V1_ROOT, KEY_SCHEDULE_V1, 'ac'.repeat(32), ESCROW_PUB[1], NODE_V1_BODY)) &&
+  throws(() => openResponse(NODE_V1_ROOT, KEY_SCHEDULE_V2, 'ab'.repeat(32), ESCROW_PUB[1], NODE_V1_BODY)));
+check('a plaintext "could not open" note is not an envelope', throws(() => openResponse(NODE_V1_ROOT, KEY_SCHEDULE_V1,
+  'ab'.repeat(32), ESCROW_PUB[1], new TextEncoder().encode('could not open')), 'Not a private'));
+
+// Schedule 2 (v1.6.6): seal_request_with_rng(gemma, 256, 1.5 KRX, 0.3 KRX, "schedule two vector", [pub0, pub1], StdRng(21))
+const NODE_V2_REQUEST = hexToBytes('399984045600f7d58d1b2cf01e6a4bf466fa15c7ac31bd0dd1a71e003b617cc60001000080d1f0080000000080c3c90100000000004b5850010326f4d8e268c134b4520a757d9cd96b2cca52f5367db630686da00bd84cbec27f78e2156a4f8d72dad218bbe802466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f279c49f066d28fae7255172965c28a110b982929a42fb948fb1dc25c405462702c4e3cdf92e9ba6741acd5256a75bb7d854f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa98e589e33f1acc72a938bfab25897d2f54463f854e578b0f87ad1c9596d981fd9497a5d56e55b12e55d04a0f4044cb6e6473d85bb4bdba644949d0837c3c02d5a34699637db8eeb11d66378a8f731bd0545766');
+// the node prints the secret as 02 ‖ seed
+const NODE_V2_SEED = hexToBytes('8ef869d58b76031332888564e76b00419d536111f5b567ebf6d79ab7c8151e5b');
+// open_request(pub0 = odd-Y) + seal_response_with_rng(its key, ab×32, "schedule two answer", StdRng(4))
+const NODE_V2_BODY = hexToBytes('004b585001e463bcb1a6e57288ffd46715e27e9daaa83ee93f461ae8abea7f5b675139085f5e58c005f0e825d04fc5e734f27590');
+// open_request(pub1) + seal_response_with_rng(its key, ab×32, answer::encode("staged answer", [151644, 872, 1048576]), StdRng(5))
+const NODE_V2_STAGED = hexToBytes('004b5850017a19fb2d099a9557f7c10c2ec3bed11e5f892b2df0d58593e9da65add3a4fbba7f7c2f79c29744b874b854e050abc9d5e91d0ceef43b12b6cd523e956f');
+check('schedule 2: the ephemeral key on the wire is the one the seed derives (HKDF "ephemeral" ‖ ctr)',
+  toHex(NODE_V2_REQUEST.subarray(57, 90)) === toHex(hexToBytes(sealRequest({ modelIdHex: model.idHex, maxTokens: 1,
+    rewardSompi: 1, priorityFeeSompi: 1, prompt: 'p', recipientsHex: [ESCROW_PUB[0]], secret: NODE_V2_SEED,
+    schedule: KEY_SCHEDULE_V2 })).subarray(57, 90)));
+check('schedule 2: requester opens its own node-sealed prompt', openOwnPrompt(NODE_V2_SEED, KEY_SCHEDULE_V2, NODE_V2_REQUEST) === 'schedule two vector');
+check('schedule 2: both named miners open the node-sealed request as schedule 2', [0, 1].every((i) => {
+  const opened = openRequest(NODE_V2_REQUEST, ESCROW[i]);
+  return opened.prompt === 'schedule two vector' && opened.schedule === KEY_SCHEDULE_V2;
+}));
+check('schedule 2: the odd-Y responder\'s node-sealed answer opens',
+  openResponse(NODE_V2_SEED, KEY_SCHEDULE_V2, 'ab'.repeat(32), ESCROW_PUB[0], NODE_V2_BODY) === 'schedule two answer');
+check('schedule 2: a stage-2 answer opens to its text, the token-id trailer stripped',
+  openResponse(NODE_V2_SEED, KEY_SCHEDULE_V2, 'ab'.repeat(32), ESCROW_PUB[1], NODE_V2_STAGED) === 'staged answer');
+check('schedule 2: answers are bound to their responder and schedule',
+  throws(() => openResponse(NODE_V2_SEED, KEY_SCHEDULE_V2, 'ab'.repeat(32), ESCROW_PUB[1], NODE_V2_BODY)) &&
+  throws(() => openResponse(NODE_V2_SEED, KEY_SCHEDULE_V1, 'ab'.repeat(32), ESCROW_PUB[0], NODE_V2_BODY)));
+const v2a = openRequest(NODE_V2_REQUEST, ESCROW[0]);
+const v2b = openRequest(NODE_V2_REQUEST, ESCROW[1]);
+const copied = sealResponse(v2a.responseKey, 'ab'.repeat(32), ESCROW_PUB[0], 'A ran the model');
+check('schedule 2: one recipient cannot read another responder\'s answer (unlike schedule 1)',
+  toHex(v2a.responseKey) !== toHex(v2b.responseKey) &&
+  throws(() => chacha20poly1305(v2b.responseKey, copied.subarray(5, 17), concat2(hexToBytes('ab'.repeat(32)), hexToBytes(ESCROW_PUB[0])))
+    .decrypt(copied.subarray(17))));
+const tk = (text, ids) => {
+  const t = new TextEncoder().encode(text);
+  const out = new Uint8Array(t.length + 4 * ids.length + 8);
+  const dv = new DataView(out.buffer);
+  out.set(t, 0);
+  ids.forEach((id, i) => dv.setUint32(t.length + 4 * i, id, true));
+  dv.setUint32(t.length + 4 * ids.length, ids.length, true);
+  out.set(new TextEncoder().encode('KXTK'), t.length + 4 * ids.length + 4);
+  return out;
+};
+const dec = (b) => new TextDecoder().decode(answerText(b));
+const lying = tk('x', [1]);
+lying[lying.length - 8] = 9; // claims 9 ids where only 1 fits: not a trailer, all text
+check('answerText mirrors keryx-node answer::decode (ids, no ids, empty, lying count)',
+  dec(tk('hello', [7, 1 << 20, 3])) === 'hello' && dec(tk('', [])) === '' &&
+  dec(new TextEncoder().encode('plain text without ids')) === 'plain text without ids' &&
+  answerText(lying).length === lying.length);
 
 const vSeed = cohortSeed('5e'.repeat(32), 3);
 check('cohort seed = txid ‖ u32le index', toHex(vSeed) === '5e'.repeat(32) + '03000000');
-check('root key derivation matches keryx-labs.com (HKDF "KeryxChatRootKeyV1")',
-  toHex(deriveRootKey('01'.repeat(32), vSeed)) === '3c21c6e93a7af5d47b109517e033fc1bd1c94bf2ea112667d7f2c34ae35888ec');
+check('request secret derivation matches keryx-labs.com\'s root key (HKDF "KeryxChatRootKeyV1")',
+  toHex(deriveRequestSecret('01'.repeat(32), vSeed)) === '3c21c6e93a7af5d47b109517e033fc1bd1c94bf2ea112667d7f2c34ae35888ec');
 check('cohort rank matches keryx-node private_cohort_rank (blake2b-256)',
   toHex(cohortRank(vSeed, hexToBytes(ESCROW_PUB[0]))) === 'b08da7922cf9e3adb67352880b76dc589d33f3db51eee917e35c4c0d3f85e1f5' &&
   toHex(cohortRank(vSeed, hexToBytes(ESCROW_PUB[2]))) === 'd35581a98168c30b03b29652638a8390291d6fd1e06724b0d4806a5f588ecb50');
@@ -318,29 +378,43 @@ check('a cohort above 128 is cut to its 128 lowest ranks, window extras dropped'
 check('prompt caps match keryx-node max_private_prompt_len (64 KiB payload)',
   maxPrivatePromptLen(1) === 65337 && maxPrivatePromptLen(45) === 61817 && maxPrivatePromptLen(128) === 55177);
 
-const myRoot = deriveRootKey(sender.privateKeyHex, vSeed);
-const sealedHex = sealRequest({
+const mySecret = deriveRequestSecret(sender.privateKeyHex, vSeed);
+const sealedBy = (schedule) => sealRequest({
   modelIdHex: getModel('qwen3.8-27b').idHex, maxTokens: 512, rewardSompi: 200000000, priorityFeeSompi: MIN_FEE_SOMPI,
-  prompt: 'Private question ✓', recipientsHex: ESCROW_PUB, rootKey: myRoot,
+  prompt: 'Private question ✓', recipientsHex: ESCROW_PUB, secret: mySecret, schedule,
 });
+const sealedHex = sealedBy(KEY_SCHEDULE_V2);
 const sealedBytes = hexToBytes(sealedHex);
 check('sealed payload: the 52-byte header stays public, then the envelope marker',
   sealedHex.startsWith(toHex(requestHeader(getModel('qwen3.8-27b').idHex, 512, 200000000, MIN_FEE_SOMPI))) &&
   isSealed(sealedBytes.subarray(52)) && sealedBytes[56] === 1 && sealedBytes[102] === 3);
 check('sealed payload never carries the prompt in clear',
   !sealedHex.includes(Buffer.from('Private question', 'utf8').toString('hex')));
-check('every recipient (incl. odd-Y keys) opens the wallet-sealed request', ESCROW.every((sk) => {
-  const opened = openRequest(sealedBytes, sk);
-  return opened.prompt === 'Private question ✓' && toHex(opened.rootKey) === toHex(myRoot);
-}));
-check('miner-sealed answer round-trips to the requester', openResponse(myRoot, 'cd'.repeat(32), ESCROW_PUB[2],
-  sealResponse(openRequest(sealedBytes, ESCROW[2]).rootKey, 'cd'.repeat(32), ESCROW_PUB[2], 'Answer ✓')) === 'Answer ✓');
+for (const schedule of [KEY_SCHEDULE_V1, KEY_SCHEDULE_V2]) {
+  const bytes = schedule === KEY_SCHEDULE_V2 ? sealedBytes : hexToBytes(sealedBy(KEY_SCHEDULE_V1));
+  check(`schedule ${schedule}: every recipient (incl. odd-Y keys) opens the wallet-sealed request`, ESCROW.every((sk) => {
+    const opened = openRequest(bytes, sk);
+    return opened.prompt === 'Private question ✓' && opened.schedule === schedule;
+  }));
+  check(`schedule ${schedule}: a miner-sealed answer round-trips to the requester`,
+    openResponse(mySecret, schedule, 'cd'.repeat(32), ESCROW_PUB[2],
+      sealResponse(openRequest(bytes, ESCROW[2]).responseKey, 'cd'.repeat(32), ESCROW_PUB[2], 'Answer ✓')) === 'Answer ✓');
+}
 check('tampered header (re-priced request) fails to open',
   throws(() => openRequest(Uint8Array.from(sealedBytes, (b, i) => (i === 40 ? b ^ 1 : b)), ESCROW[0])));
-check('sealing refuses no recipients, bad keys and oversized prompts',
-  throws(() => sealRequest({ modelIdHex: model.idHex, maxTokens: 1, rewardSompi: 1, priorityFeeSompi: 1, prompt: 'p', recipientsHex: [], rootKey: myRoot }), 'No recipients') &&
-  throws(() => sealRequest({ modelIdHex: model.idHex, maxTokens: 1, rewardSompi: 1, priorityFeeSompi: 1, prompt: 'p', recipientsHex: ['ff'.repeat(32)], rootKey: myRoot }), 'Invalid escrow key') &&
-  throws(() => sealRequest({ modelIdHex: model.idHex, maxTokens: 1, rewardSompi: 1, priorityFeeSompi: 1, prompt: 'x'.repeat(65338), recipientsHex: [ESCROW_PUB[0]], rootKey: myRoot }), 'does not fit'));
+const sealArgs = { modelIdHex: model.idHex, maxTokens: 1, rewardSompi: 1, priorityFeeSompi: 1, secret: mySecret, schedule: KEY_SCHEDULE_V2 };
+check('sealing refuses no recipients, bad keys, oversized prompts and unknown schedules',
+  throws(() => sealRequest({ ...sealArgs, prompt: 'p', recipientsHex: [] }), 'No recipients') &&
+  throws(() => sealRequest({ ...sealArgs, prompt: 'p', recipientsHex: ['ff'.repeat(32)] }), 'Invalid escrow key') &&
+  throws(() => sealRequest({ ...sealArgs, prompt: 'x'.repeat(65338), recipientsHex: [ESCROW_PUB[0]] }), 'does not fit') &&
+  throws(() => sealRequest({ ...sealArgs, prompt: 'p', recipientsHex: [ESCROW_PUB[0]], schedule: 3 }), 'Unknown key schedule'));
+check('key schedule follows the H15 gate (schedule 2 from H15_ACTIVATION_DAA, as keryx-cli seals)',
+  keyScheduleAt(H15_ACTIVATION_DAA - 1) === KEY_SCHEDULE_V1 && keyScheduleAt(H15_ACTIVATION_DAA) === KEY_SCHEDULE_V2);
+check('H15 context rule: safe prompt bytes = context floor − max_tokens − 512 (keryx-node safe_prompt_len)',
+  safePromptBytes(getModel('qwen3.5-9b-abliterated'), 4096) === 3584 &&
+  safePromptBytes(getModel('kimi-linear-48b'), 256) === 32000 &&
+  safePromptBytes(getModel('qwen3.5-9b-abliterated'), 8000) === 0 &&
+  safePromptBytes(getModel('mistral-7b-v0.3'), 256) === Infinity);
 
 // --- sealed AiRequest tx: inputs chosen first (the first seeds the cohort), order kept ---
 const flatReward = inferenceRewardSompi('gemma-4-12b-abliterated', 256, true);

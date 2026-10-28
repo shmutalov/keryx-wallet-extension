@@ -77,6 +77,14 @@ current side of the gate is refused as an invalid request. Within about a minute
 of the gate the wallet refuses inference requests altogether (a request could
 land on either side of it).
 
+From the H15 hardfork (mainnet DAA 140,115,000) requests are sealed under key
+schedule 2, so no miner can read or pass off another miner's answer, and the
+approval window warns when the prompt may not fit the model's context with the
+requested `maxTokens` (8,192 tokens on tier 0, 32,768 above): such a request can go
+unanswered without any miner being penalized, and the reward is then lost. The
+request is not refused — byte length overstates tokens — so keep long prompts on
+tiers 1–4 or lower `maxTokens`.
+
 ## `signTx` — arbitrary transactions, HTLC claim & refund
 
 For anything the high-level methods don't cover — P2SH spends, custom

@@ -22,7 +22,14 @@ import {
   MIN_FEE_SOMPI,
   SIGHASH_ALL,
 } from '../lib/tx.js';
-import { getModel, inferenceRewardSompi, selectableModels } from '../lib/models.js';
+import {
+  getModel,
+  inferenceRewardSompi,
+  selectableModels,
+  isH15Active,
+  safePromptBytes,
+  CONTEXT_FLOORS,
+} from '../lib/models.js';
 import { submitInference, inferenceEra } from '../lib/inference.js';
 import { api } from '../lib/api.js';
 import { unlockVault } from '../lib/vault.js';
@@ -386,8 +393,10 @@ async function renderInference() {
   // side of the H14 gate the network is on.
   show(header(t('approval_inference_action')), el('div', { class: 'loading' }, t('common_loading')));
   let era;
+  let daa;
   try {
-    era = inferenceEra((await api.info())?.last_daa_score ?? 0);
+    daa = (await api.info())?.last_daa_score ?? 0;
+    era = inferenceEra(daa);
   } catch (e) {
     return renderInvalid(e instanceof Error ? e.message : String(e));
   }
@@ -399,6 +408,9 @@ async function renderInference() {
     return renderInvalid(`${model.name} is not served ${sealed ? 'since' : 'before'} the H14 network upgrade`);
   }
   const reward = inferenceRewardSompi(modelKey, maxTokens, sealed);
+  // H15 context rule: a prompt that may overflow the tier's context floor can lapse unanswered.
+  const safe = safePromptBytes(model, maxTokens);
+  const risky = isH15Active(daa) && new TextEncoder().encode(prompt.trim()).length > safe;
 
   const status = statusBox();
   show(
@@ -413,6 +425,11 @@ async function renderInference() {
       row(t('label_total'), `${formatKRX(reward + fee)} KRX`)
     ),
     sealed ? el('p', { id: 'inference-sealed', class: 'hint', style: 'text-align:left' }, t('approval_inference_sealed')) : null,
+    risky
+      ? el('p', { id: 'inference-context', class: 'hint', style: 'text-align:left;color:#ff8c00' },
+        t('inf_context_warn', model.name, CONTEXT_FLOORS[model.tier].toLocaleString('en-US'), maxTokens,
+          safe.toLocaleString('en-US')))
+      : null,
     status,
     actions(async (busy) => {
       try {

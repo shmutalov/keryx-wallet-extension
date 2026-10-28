@@ -289,7 +289,8 @@ seed)` — and this wallet does the same, so either client opens the other's ans
 from the seed phrase alone and no secret is ever stored. `seed` (the **cohort seed**)
 is the outpoint the request's **first input** spends: `txid (32) ‖ index u32le` —
 unique, since no other transaction can spend it. The inputs are therefore chosen
-before the payload is built.
+before the payload is built. (This is key schedule 1; from H15 requests seal under
+key schedule 2 — see *Verifiable inference — H15* below.)
 
 **Recipients.** `GET /api/v1/ai/providers` (keryx-labs.com and the shim, same
 shape) → `{ virtual_daa_score, window_daa: 18000, cohort: [...], window: [...] }`, each
@@ -327,3 +328,69 @@ keryx-labs.com seals it deflate-raw compressed behind a `00 'K' 'Z' 01` marker �
 a miner-side convention (the node's H14 banner advertises "prompts up to 64 KiB
 (compressed)"; keryx-node itself never inspects the plaintext). This wallet never
 compresses: the envelope fits a 55 KB prompt even at 128 recipients.
+
+## Verifiable inference — H15 (keryx-node v1.6.6, verified 2026-10-28)
+
+keryx-node `verifiable_inference_activation` and the trace gates bundled with it
+(`trace_chain_activation`, `trace_context_activation`, …): **mainnet DAA 140,115,000**
+(≈ 2026-10-30 at the chain's ~10.13 DAA/s; mainnet was at 138.03M on 2026-10-28;
+testnet 3,500). Miners now commit an inference trace with every answer and open
+parts of it on demand (new subnetwork `06` opening transactions, `getAwaitedOpenings`);
+none of that is requester-facing. The model lineup, the flat prices, the envelope
+format and the request identity are unchanged. What changes for a requester:
+
+**Key schedule 2** (`inference/src/private.rs`, node v1.6.5). Under H14's schedule 1
+every recipient unwraps the same root key and could derive every responder's answer
+key, so a miner could read a competitor's sealed answer in the mempool, re-seal it
+as its own and be credited. Schedule 2 binds each answer key to the requester–
+responder ECDH secret. All derivations use salt `"KeryxPrivateInferenceV2"`:
+
+- the request secret is a 32-byte **seed**; `root_key = HKDF(seed, "root")`;
+- the ephemeral secret `e` = the first valid scalar of `HKDF(seed, "ephemeral" ‖ ctr)`,
+  `ctr` = one byte from 0, so the requester can recompute `e` (and every `ss_i`) later;
+- `kek_i` and `k_prompt` as in schedule 1, under the V2 salt;
+- `k_response_i = HKDF(ss_i ‖ root_key, "response" ‖ R_i)`.
+
+The schedule is **not on the wire** (consensus accepts envelope version 1 only): a
+responder tries the V2 KEK first, then V1 — exactly one authenticates its wrapped root
+key — and the requester knows it from its secret (keryx-cli prints `02 ‖ seed` for
+schedule 2, a bare 32-byte root key for schedule 1). Schedule-1 requests stay
+servable. Rollout is miners first: a miner built before schedule 2 cannot unwrap it
+and answers with its plaintext error body, which used to be credited; keryx-cli
+therefore seals schedule 1 until H15 and schedule 2 from it, and so does this wallet
+(`keyScheduleAt` in `src/lib/inference.js`). From H15 an untraced response earns no
+credit on the audited tiers, so a pre-H15 miner's error body cannot win the vault.
+
+This wallet keeps one derivation for both schedules — `secret = HKDF(salt
+"KeryxChatRootKeyV1", account private key, "root" ‖ cohort seed)`, used as the root
+key under schedule 1 (as keryx-labs.com does) and as the seed under schedule 2 — and
+records each request's schedule. The cohort seed is the first input's outpoint, so a
+secret is used for exactly one request under exactly one schedule. As of 2026-10-28
+keryx-labs.com's `/infer` still seals schedule 1 and has no schedule-2 derivation; if
+it adopts a different one, the two clients simply stop being able to open each
+other's schedule-2 answers (each still opens its own).
+
+**Stage-2 answers** (`trace_chain_activation`, `verifiable-inference/src/answer.rs`).
+The sealed answer's plaintext becomes `text ‖ token ids (u32 LE each) ‖ count (u32 LE)
+‖ "KXTK"`, so the trace can be checked against the generated tokens. Decode as the
+node does: if the last 4 bytes are `KXTK` and `count × 4 + 8` bytes fit, the text is
+what precedes the ids; otherwise the whole plaintext is text. The inline body cap rises
+from 32 to 48 KiB, and a second response extension follows the body:
+`[0x81] [len: 4 LE] [trace_root: 32] [n_prompt: 4 LE] [n_pos: 4 LE] [stage: 1]
+[tokens_root: 32]?` (41 or 73 bytes). API hosts strip it: `sealed_responses[].body` is
+still the response envelope alone (keryx-api-shim a7aa8bc; `response_length` added).
+
+**Context rule** (`trace_context_activation`). Each tier holds its responders to a
+context floor — 8,192 tokens for tier 0, 32,768 for tiers 1–4 (`CONTEXT_FLOORS_H14`) —
+and a request's prompt is sure to fit when its plaintext length in bytes (envelope
+ciphertext − 16) is at most `floor − max_tokens − 512` (`safe_prompt_len`; a token
+spans at least one byte, 512 covers the chat template). When a longer prompt goes
+unanswered and no responder proves it fits, the silent miners are excused rather than
+struck, so the request can lapse and the reward be lost. Bytes overstate tokens
+(~4 bytes/token for English), so this wallet warns above the safe length instead of
+refusing: on tier 0 at 4,096 max tokens only 3,584 bytes are sure to fit.
+
+**Feed.** keryx-labs.com — and the shim since a7aa8bc — leave sealed requests out of
+`GET /infer`: their prompts are unreadable, and a requester reads its answer from
+`/inference/{tx_id}`. Since every request is sealed from H14, the feed holds only
+pre-H14 public requests (newest at DAA 121,365,687 on 2026-10-28).

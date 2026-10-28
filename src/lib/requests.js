@@ -5,10 +5,12 @@
 // Stored in chrome.storage.local under `krx_inf.<address>`, encrypted with
 // AES-256-GCM under a key derived from the account's private key, so prompts
 // and answers are as private on disk as they are on-chain. Nothing secret is
-// stored: a request's root key is re-derived from the private key and the
-// record's cohort seed (private.js deriveRootKey) whenever an answer is opened.
+// stored: a request's secret is re-derived from the private key and the
+// record's cohort seed (private.js deriveRequestSecret) whenever an answer is
+// opened.
 //
-// Record: { id (request tx id), seed (hex, 36 B), model (key), maxTokens,
+// Record: { id (request tx id), seed (hex, 36 B), schedule (key schedule 1|2;
+//   absent on v0.7.0 records, which are all 1), model (key), maxTokens,
 //   rewardSompi, feeSompi, recipients (count), prompt, sentAt, origin?,
 //   status: 'pending'|'answered'|'failed', answer?, responder?, answeredAt?,
 //   responses?, note? (a responder's plaintext "could not open") }

@@ -11,7 +11,7 @@ import { readFileSync, readdirSync } from 'fs';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { hexToBytes } from '../src/lib/keryx.js';
 import { openRequest, sealResponse, toHex } from '../src/lib/private.js';
-import { H14_ACTIVATION_DAA } from '../src/lib/models.js';
+import { H14_ACTIVATION_DAA, H15_ACTIVATION_DAA } from '../src/lib/models.js';
 
 const dom = new JSDOM('<!DOCTYPE html><html><body><div id="app"></div></body></html>', {
   url: 'chrome-extension://test/popup.html',
@@ -93,6 +93,7 @@ const MOCK_INFERENCES = [
 ];
 let mockBalance = false;
 let broadcastBody = null;
+let mockTxId = 'e2e0'.repeat(16); // what the mocked broadcast answers
 let mockDaa = null; // set: /info answers with this DAA (which side of the H14 gate), else live
 let mockInferences = MOCK_INFERENCES;
 let mockProviders = null; // /ai/providers body
@@ -121,7 +122,7 @@ globalThis.fetch = async (url, init) => {
   }
   if (u.endsWith('/broadcast')) {
     broadcastBody = JSON.parse(init.body);
-    return new Response(JSON.stringify({ transaction_id: 'e2e0'.repeat(16) }), { status: 200 });
+    return new Response(JSON.stringify({ transaction_id: mockTxId }), { status: 200 });
   }
   if (u.endsWith('/capabilities')) {
     return new Response(JSON.stringify(MOCK_CAPABILITIES), { status: 200 });
@@ -311,7 +312,8 @@ check('15m2', 'retired models (exaone, qwen3-8b, mistral-7b) not offered',
   !modelOptions().some((k) => ['exaone-4.0-1.2b', 'qwen3-8b-abliterated', 'mistral-7b-v0.3'].includes(k)));
 check('15m3', 'before H14: tier 3 is Qwen3.6-27B, no private-requests card',
   modelOptions().includes('qwen3.6-27b') && !modelOptions().includes('qwen3.8-27b') &&
-  byId('inf-mine').parentElement.style.display === 'none' && byId('inf-privacy').style.display === 'none');
+  byId('inf-mine').parentElement.style.display === 'none' && byId('inf-privacy').style.display === 'none' &&
+  byId('inf-feed-note').style.display === 'none');
 await until(() => byId('inf-miners')?.textContent.includes('3 active miners'), 20);
 check('15n', 'live miner count shown from capabilities', byId('inf-miners').textContent.includes('3 active miners'));
 await until(() => app().textContent.includes('Balance: 100 KRX'), 20);
@@ -364,7 +366,7 @@ mockProviders = {
   window: [provider(PUB_A, DEFAULT_MODEL_ID, 2), provider(PUB_B, DEFAULT_MODEL_ID, 2), provider(PUB_C, DEFAULT_MODEL_ID, 2),
     provider(PUB_GLM, GLM_ID, 1)],
 };
-const OWN_TX = 'e2e0'.repeat(16); // what the mocked broadcast answers
+const OWN_TX = mockTxId;
 const STRANGER = { tx_id: 'cf'.repeat(32), model: 'gemma-4-12b-abliterated', prompt: '', sealed: true, sealed_recipients: 45,
   max_tokens: 256, inference_reward: 150000000, priority_fee: 30000000, daa_score: H14_ACTIVATION_DAA + 10,
   block_hash: 'ef'.repeat(32), payload_prefix: 'cf'.repeat(8), result: 'Qm' + 'Z'.repeat(44), result_text: null };
@@ -379,6 +381,8 @@ check('15t', 'from H14: tier 3 is Qwen3.8-27B, flat prices, gemma kept as defaul
 check('15u', 'privacy notice + empty "Your private requests" card shown',
   byId('inf-privacy').style.display === '' && byId('inf-mine').parentElement.style.display === '' &&
   byId('inf-mine').textContent.includes('No private requests'));
+check('15u2', 'the feed notes that API hosts do not list private requests (hidden before H14)',
+  byId('inf-feed-note').style.display === '' && byId('inf-feed-note').textContent.includes('Private requests are not listed'));
 await until(() => byId('inf-feed')?.textContent.includes('Sealed prompt'), 20);
 check('15v', 'a stranger\'s sealed request shows as sealed, its answer is never fetched from IPFS',
   byId('inf-feed').textContent.includes('🔒 Sealed prompt — readable only by the requester and 45 miners') &&
@@ -404,6 +408,7 @@ check('15y', 'broadcast: public header (flat reward), vault at outputs[1], promp
 check('15z', 'cohort + window miners of the tier open the prompt; the other tier\'s miner cannot',
   [0, 1, 2].every((i) => openedBy(ESCROW_SK[i])?.prompt === 'Secret question') && openedBy(ESCROW_SK[3]) === null &&
   JSON.stringify(minerView?.recipients) === JSON.stringify([PUB_A, PUB_B, PUB_C].sort()));
+check('15z2', 'before H15 the request is sealed under key schedule 1 (as keryx-cli seals)', minerView?.schedule === 1);
 const recordKey = Object.keys(localStore).find((k) => k.startsWith('krx_inf.keryx:'));
 check('15aa', 'the request is kept per account, encrypted at rest (no plaintext prompt in storage)',
   !!recordKey && !!localStore[recordKey]?.iv && !JSON.stringify(localStore[recordKey]).includes('Secret question'));
@@ -416,7 +421,7 @@ mockInferenceResult = {
   tx_id: OWN_TX, status: 'completed', sealed: true, sealed_recipients: 3,
   sealed_responses: [
     { responder_pubkey: PUB_A, body: Buffer.from('could not open the request').toString('hex') },
-    { responder_pubkey: PUB_C, body: toHex(sealResponse(minerView.rootKey, OWN_TX, PUB_C, 'The secret answer.')) },
+    { responder_pubkey: PUB_C, body: toHex(sealResponse(minerView.responseKey, OWN_TX, PUB_C, 'The secret answer.')) },
   ],
 };
 mockInferences = [{ ...STRANGER, tx_id: OWN_TX, sealed_recipients: 3, result: 'Qm' + 'Y'.repeat(44) }, STRANGER];
@@ -431,6 +436,59 @@ mockInferenceResult = null;
 await reopenInference();
 await until(() => byId('inf-mine')?.textContent.includes('The secret answer.'), 20);
 check('15ae', 'answer persists across popup sessions (encrypted store)', byId('inf-mine').textContent.includes('The secret answer.'));
+
+// --- H15: requests seal under key schedule 2, stage-2 answers carry the token
+// ids inside the sealed plaintext, and the context rule warns on long prompts ---
+mockDaa = H15_ACTIVATION_DAA + 5000;
+mockTxId = 'e2e1'.repeat(16);
+mockInferences = [];
+await reopenInference();
+await until(() => modelOptions().length === 5, 20);
+const setTokens = (v) => { byId('inf-tokens').value = String(v); fire(byId('inf-tokens'), 'input'); };
+const setPrompt = (v) => { byId('inf-prompt').value = v; fire(byId('inf-prompt'), 'input'); };
+byId('inf-model').value = 'qwen3.5-9b-abliterated';
+fire(byId('inf-model'), 'change');
+setTokens(4096);
+setPrompt('x'.repeat(4000));
+await sleep(50);
+check('15ag', 'context rule: 4,000 bytes on tier 0 at 4,096 max tokens warns (only 3,584 sure to fit)',
+  byId('inf-context').style.display === '' && byId('inf-context').textContent.includes('8,192-token context') &&
+  byId('inf-context').textContent.includes('3,584 bytes'));
+setTokens(256);
+await sleep(50);
+check('15ah', 'the warning clears once the prompt fits (7,424 bytes at 256 max tokens)', byId('inf-context').style.display === 'none');
+byId('inf-model').value = 'gemma-4-12b-abliterated';
+fire(byId('inf-model'), 'change');
+setPrompt('Stage two question');
+await sleep(50);
+broadcastBody = null;
+byId('inf-submit').click();
+await until(() => byId('inf-status')?.className === 'success-box', 30);
+const h15Payload = hexToBytes(broadcastBody?.payload ?? '');
+const h15Miner = (() => { try { return openRequest(h15Payload, ESCROW_SK[1]); } catch { return null; } })();
+check('15ai', 'from H15 the request is sealed under key schedule 2', h15Miner?.schedule === 2 && h15Miner.prompt === 'Stage two question');
+const stage2 = (text, ids) => {
+  const t = new TextEncoder().encode(text);
+  const out = new Uint8Array(t.length + 4 * ids.length + 8);
+  const dv = new DataView(out.buffer);
+  out.set(t);
+  ids.forEach((id, i) => dv.setUint32(t.length + 4 * i, id, true));
+  dv.setUint32(t.length + 4 * ids.length, ids.length, true);
+  out.set(new TextEncoder().encode('KXTK'), t.length + 4 * ids.length + 4);
+  return out;
+};
+mockInferenceResult = {
+  tx_id: mockTxId, status: 'completed', sealed: true, sealed_recipients: 3,
+  sealed_responses: [{ responder_pubkey: PUB_B, response_length: 40,
+    body: toHex(sealResponse(h15Miner.responseKey, mockTxId, PUB_B, stage2('The traced answer.', [151644, 872, 1048576]))) }],
+};
+await until(() => byId('inf-mine')?.textContent.includes('The traced answer.'), 30);
+const ownH15 = [...byId('inf-mine').querySelectorAll('.inf-item')].find((n) => n.textContent.includes('Stage two question'));
+check('15aj', 'the schedule-2 answer opens and shows its text only (token-id trailer stripped)',
+  !!ownH15 && ownH15.querySelector('.inf-result-text')?.textContent === 'The traced answer.');
+check('15ak', 'the schedule-1 request from before H15 still shows its answer',
+  byId('inf-mine').textContent.includes('The secret answer.'));
+mockInferenceResult = null;
 // Right before the gate nothing may be sent: a request could land on either side of it.
 mockDaa = H14_ACTIVATION_DAA - 100;
 await reopenInference();
