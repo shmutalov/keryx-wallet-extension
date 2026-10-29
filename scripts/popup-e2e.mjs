@@ -10,7 +10,7 @@ import { JSDOM } from 'jsdom';
 import jsQR from 'jsqr';
 import { readFileSync, readdirSync } from 'fs';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
-import { hexToBytes, isValidAddress } from '../src/lib/keryx.js';
+import { hexToBytes, isValidAddress, addressToScriptPublicKey } from '../src/lib/keryx.js';
 import { openRequest, sealResponse, toHex } from '../src/lib/private.js';
 import { H14_ACTIVATION_DAA, H15_ACTIVATION_DAA } from '../src/lib/models.js';
 
@@ -108,6 +108,7 @@ const MOCK_INFERENCES = [
     inference_reward: 60000000, priority_fee: 30000000, daa_score: 101, block_hash: 'ef'.repeat(32),
     payload_prefix: 'bb22'.repeat(4), result: null },
 ];
+let mockUtxos = null; // set: /utxos answers with these instead of MOCK_UTXOS
 let mockBalance = false;
 let broadcastBody = null;
 let mockTxId = 'e2e0'.repeat(16); // what the mocked broadcast answers
@@ -135,7 +136,7 @@ globalThis.fetch = async (url, init) => {
     return new Response('not found', { status: 404 });
   }
   if (u.includes('/utxos?')) {
-    return new Response(JSON.stringify(MOCK_UTXOS), { status: 200 });
+    return new Response(JSON.stringify(mockUtxos ?? MOCK_UTXOS), { status: 200 });
   }
   if (u.endsWith('/broadcast')) {
     broadcastBody = JSON.parse(init.body);
@@ -333,6 +334,50 @@ check('15i', 'broadcast tx pays 1.5 KRX to picked address with change - fee',
 check('15j', 'destination saved to recents', localStore.krx_recent?.[0]?.address === addr2);
 check('15k', 'no save-to-book offer for known address', !byId('save-dest-btn'));
 
+app().querySelector('.link-btn').click(); // back to dashboard
+await until(() => !!byId('lock-btn'), 10);
+
+// --- consolidate: the two mocked 3 KRX UTXOs merge into one self-send ---
+mockDaa = 5000; // /info mocked, so maturity filtering doesn't depend on the live node
+const consolidateSummary = () => byId('consolidate-summary')?.textContent ?? '';
+byId('consolidate-btn').click();
+await until(() => byId('consolidate-start-btn') && !byId('consolidate-start-btn').disabled, 20);
+check('15k1', 'consolidate screen: 2 spendable UTXOs, ~1 transaction, ~0.3 KRX in fees',
+  consolidateSummary().includes('Spendable UTXOs2') && consolidateSummary().includes('~1') &&
+  consolidateSummary().endsWith('~0.3 KRX'), consolidateSummary());
+broadcastBody = null;
+byId('consolidate-start-btn').click();
+await until(() => byId('consolidate-status')?.textContent.startsWith('Done'), 20);
+check('15k2', 'consolidation broadcasts one self-send of both UTXOs minus the 0.3 KRX fee',
+  byId('consolidate-status').textContent.startsWith('Done. Transactions sent: 1.') &&
+  broadcastBody?.inputs?.length === 2 && broadcastBody.outputs.length === 1 &&
+  broadcastBody.outputs[0].amount === 6_00000000 - 30000000 &&
+  broadcastBody.outputs[0].script_public_key === addressToScriptPublicKey(addr),
+  byId('consolidate-status')?.textContent);
+
+// --- a send needing more inputs than fit one transaction stops before broadcast ---
+mockUtxos = Array.from({ length: 100 }, (_, i) =>
+  ({ ...MOCK_UTXOS[0], transaction_id: i.toString(16).padStart(64, 'c'), amount_sompi: 10000000 })); // 100 x 0.1 KRX
+app().querySelector('.link-btn').click(); // back to dashboard
+await until(() => !!byId('send-btn'), 10);
+byId('send-btn').click();
+await sleep(100);
+byId('dest-input').value = addr2;
+fire(byId('dest-input'), 'input');
+byId('amount-input').value = '9.5'; // + 0.3 fee = 98 inputs of 0.1 KRX
+fire(byId('amount-input'), 'input');
+await sleep(50);
+broadcastBody = null;
+byId('send-confirm-btn').click();
+await until(() => !!byId('send-consolidate-btn'), 30);
+check('15k3', 'a 98-input send is refused before broadcast and points to Consolidate',
+  !!byId('send-consolidate-btn') && broadcastBody === null &&
+  byId('send-status').textContent.includes('98 UTXOs'), byId('send-status')?.textContent);
+byId('send-consolidate-btn').click();
+await until(() => consolidateSummary().includes('Spendable UTXOs100'), 20);
+check('15k4', 'its Consolidate button opens the merge of all 100 (~3 transactions)',
+  consolidateSummary().includes('~3'), consolidateSummary());
+mockUtxos = null;
 app().querySelector('.link-btn').click(); // back to dashboard
 await until(() => !!byId('lock-btn'), 10);
 

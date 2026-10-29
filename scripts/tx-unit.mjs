@@ -19,7 +19,16 @@ import {
   SIGHASH_NONE,
   SIGHASH_SINGLE,
   SIGHASH_ANYONECANPAY,
+  computeMass,
+  MAX_STANDARD_MASS,
 } from '../src/lib/tx.js';
+import {
+  planConsolidation,
+  estimateTxCount,
+  buildConsolidationTx,
+  consolidate,
+  CONSOLIDATE_BATCH,
+} from '../src/lib/consolidate.js';
 import {
   inferenceRewardSompi,
   getModel,
@@ -595,6 +604,102 @@ check('personal message signature verifies against keyed blake2b digest',
   schnorr.verify(hexToBytes(msgSig), personalMessageHash('Login to dApp: nonce 42'), xOnlyPub));
 check('different messages give different digests',
   !eq(personalMessageHash('a'), personalMessageHash('b')));
+
+// --- compute mass (keryx-node consensus/core/src/mass) ---
+check('mass: 2-in/2-out transfer = 94 + 2*1118 + 2*412', computeMass(tx) === 94 + 2 * 1118 + 2 * 412, computeMass(tx));
+const manyUtxos = (count, amount, from = 0) => Array.from({ length: count }, (_, i) =>
+  ({ ...utxo('f', amount), transaction_id: (from + i).toString(16).padStart(64, '0') }));
+const exactSpend = (count) => buildTransferTx({
+  utxos: manyUtxos(count, 1_00000000), toAddress: sender.address, amountSompi: count * 1_00000000 - MIN_FEE_SOMPI,
+  feeSompi: MIN_FEE_SOMPI, changeAddress: sender.address, privateKeyHex: sender.privateKeyHex,
+}).tx;
+check('mass: 88 inputs fit the standard limit, 89 do not',
+  computeMass(exactSpend(88)) <= MAX_STANDARD_MASS && computeMass(exactSpend(89)) > MAX_STANDARD_MASS,
+  `${computeMass(exactSpend(88))} / ${computeMass(exactSpend(89))}`);
+
+// --- consolidation planning ---
+const planned = planConsolidation(manyUtxos(170, 2_00000000), daa);
+check('170 UTXOs plan as batches of 80, 80 and 10',
+  JSON.stringify(planned.batches.map((b) => b.length)) === '[80,80,10]');
+check('a lone leftover waits for the next round (161 -> 80, 80)',
+  JSON.stringify(planConsolidation(manyUtxos(161, 2_00000000), daa).batches.map((b) => b.length)) === '[80,80]');
+const shuffled = manyUtxos(170, 2_00000000).sort(() => Math.random() - 0.5);
+check('batches are in outpoint order, whatever order the API returns',
+  JSON.stringify(planConsolidation(shuffled, daa).batches) === JSON.stringify(planned.batches));
+check('a batch the fee would eat is skipped (2 x 0.1 KRX)',
+  planConsolidation(manyUtxos(2, 10000000), daa).batches.length === 0);
+check('a batch over the KIP-9 storage-mass limit is skipped (2 x 0.16 KRX -> 0.02 KRX out)',
+  planConsolidation(manyUtxos(2, 16000000), daa).batches.length === 0 &&
+  planConsolidation(manyUtxos(2, 20000000), daa).batches.length === 1);
+const withImmature = [...manyUtxos(3, 2_00000000), utxo('c', 2_00000000, { block_daa_score: daa - 500, is_coinbase: true })];
+check('immature coinbase stays out of consolidation',
+  planConsolidation(withImmature, daa).eligible.length === 3 && planConsolidation(withImmature, daa).batches[0].length === 3);
+check('transaction estimate: 1->0, 2->1, 80->1, 81->2, 170->4, 6400->81',
+  [1, 2, 80, 81, 170, 6400].map(estimateTxCount).join() === '0,1,1,2,4,81');
+const fullBatchTx = buildConsolidationTx(planned.batches[0], sender.address, sender.privateKeyHex, daa);
+check('an 80-input batch is one self-send of sum - fee, mass 89,946',
+  fullBatchTx.inputs.length === CONSOLIDATE_BATCH && fullBatchTx.outputs.length === 1 &&
+  fullBatchTx.outputs[0].amount === 80 * 2_00000000 - MIN_FEE_SOMPI &&
+  fullBatchTx.outputs[0].script_public_key === addressToScriptPublicKey(sender.address) &&
+  computeMass(fullBatchTx) === 89946, computeMass(fullBatchTx));
+
+// --- consolidation runs against a simulated node ---
+// stale: the indexer keeps returning the first snapshot; duplicates answer like the mempool does
+const mockChain = (initial, { stale = false, failWith = null } = {}) => {
+  const live = new Map(initial.map((u) => [`${u.transaction_id}:${u.index}`, u]));
+  const snapshot = [...live.values()];
+  const seen = new Set();
+  const broadcasts = [];
+  return {
+    live,
+    broadcasts,
+    api: {
+      info: async () => ({ last_daa_score: daa }),
+      utxos: async (_address, limit) => (stale ? snapshot : [...live.values()]).slice(0, limit),
+      broadcast: async (wire) => {
+        if (failWith) throw new Error(failWith);
+        const key = wire.inputs.map((i) => `${i.transaction_id}:${i.index}`).sort().join();
+        if (seen.has(key)) throw new Error('API 400 — transaction abc is already in the mempool');
+        seen.add(key);
+        for (const i of wire.inputs) live.delete(`${i.transaction_id}:${i.index}`);
+        const id = (broadcasts.length + 1).toString(16).padStart(64, 'e');
+        live.set(`${id}:0`, { ...utxo('e', wire.outputs[0].amount), transaction_id: id, block_daa_score: daa - 10 });
+        broadcasts.push(wire);
+        return { transaction_id: id };
+      },
+    },
+  };
+};
+const noWait = async () => {};
+const chain = mockChain(manyUtxos(170, 2_00000000));
+const progress = [];
+const run = await consolidate({ api: chain.api, address: sender.address, privateKeyHex: sender.privateKeyHex,
+  onProgress: (p) => progress.push(`${p.round}:${p.done}/${p.total}`), sleep: noWait });
+check('170 UTXOs merge in 2 rounds and 4 transactions into one UTXO',
+  run.sent === 4 && run.rounds === 2 && !run.error && !run.stalled && chain.live.size === 1 &&
+  [...chain.live.values()][0].amount_sompi === 170 * 2_00000000 - 4 * MIN_FEE_SOMPI, JSON.stringify(run));
+check('fees = 0.3 KRX per transaction', run.fees === 4 * MIN_FEE_SOMPI);
+check('progress reports each wave per round', progress.join(' ') === '1:3/3 2:1/1', progress.join(' '));
+check('every broadcast is a single-output self-send within the mass limit',
+  chain.broadcasts.every((w) => w.outputs.length === 1 && w.inputs.length <= CONSOLIDATE_BATCH &&
+    w.outputs[0].script_public_key === addressToScriptPublicKey(sender.address) && computeMass(w) <= MAX_STANDARD_MASS));
+
+const staleChain = mockChain(manyUtxos(170, 2_00000000), { stale: true });
+const staleRun = await consolidate({ api: staleChain.api, address: sender.address, privateKeyHex: sender.privateKeyHex, sleep: noWait });
+check('a stale indexer: re-sent batches count as already submitted, the run stops as stalled',
+  staleRun.sent === 3 && staleRun.stalled && !staleRun.error && staleChain.broadcasts.length === 3, JSON.stringify(staleRun));
+
+const rejectRun = await consolidate({
+  api: mockChain(manyUtxos(170, 2_00000000), { failWith: 'API 400 — transaction fee too low' }).api,
+  address: sender.address, privateKeyHex: sender.privateKeyHex, sleep: noWait,
+});
+check('a real rejection stops the run with the node error',
+  rejectRun.sent === 0 && /fee too low/.test(rejectRun.error?.message ?? ''), rejectRun.error?.message);
+const downRun = await consolidate({
+  api: { ...chain.api, utxos: async () => { throw new Error('Keryx node unreachable'); } },
+  address: sender.address, privateKeyHex: sender.privateKeyHex, sleep: noWait,
+});
+check('an unreachable node ends the run with the fetch error', /unreachable/.test(downRun.error?.message ?? ''));
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

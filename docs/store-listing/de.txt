@@ -9,6 +9,7 @@ FUNKTIONEN
 ◈ Live-Dashboard: KRX-Guthaben mit USD-Schätzung, UTXO-Anzahl, Netzwerkstatus und vollständiger Transaktionsverlauf mit Explorer-Links
 ➤ KRX senden: Transaktionen werden vollständig in Ihrem Browser erstellt und signiert (BIP340 Schnorr, Sighash nach Kaspa-Art) und dann übertragen
 ▣ KRX empfangen: Ihre Adresse als QR-Code, zum Scannen oder Kopieren
+⇊ UTXOs zusammenführen: viele kleine Mining-Auszahlungen in Gruppen zu 80 bündeln, damit auch große Überweisungen durchgehen
 ✦ Private KI: Wählen Sie ein Modell (Open-Weight-LLMs wie Qwen, GLM, Gemma und Kimi) und sehen Sie vor der Bestätigung, wie viele Miner es bedienen und was es kostet. Ihr Prompt wird im Browser so verschlüsselt, dass nur die Miner dieses Modells ihn lesen können, und die Antwort wird für Ihre Wallet verschlüsselt. Für jedes Keryx-Netzwerk-Upgrade aktuell gehalten, einschließlich H15 (verifizierbare Inferenz).
 ⇄ dApp-Verbindungen: Berechtigungen pro Website, Zahlungen, Nachrichtensignaturen, KI-Anfragen und erweiterte Skript-Signaturen (HTLC-Claim und -Refund). Jede Anfrage zeigt Website, Beträge und Outputs, bevor Sie sie genehmigen. Websites lassen sich jederzeit in den Einstellungen trennen.
 ⊕ Erstellen oder importieren: 24-Wörter-BIP39-Seed-Phrase mit geführter Sicherung oder Wiederherstellung aus einer beliebigen Phrase mit 12 oder 24 Wörtern

@@ -9,6 +9,7 @@ FUNCIONES
 ◈ Panel en vivo: saldo de KRX con estimación en USD, cantidad de UTXOs, estado de la red e historial completo de transacciones con enlaces al explorador
 ➤ Enviar KRX: las transacciones se crean y se firman por completo en tu navegador (Schnorr BIP340, sighash al estilo de Kaspa) y luego se transmiten
 ▣ Recibir KRX: tu dirección como código QR, lista para escanear o copiar
+⇊ Consolidar UTXOs: junta muchos pagos de minería pequeños en lotes de 80 para que los envíos grandes funcionen
 ✦ IA privada: elige un modelo (LLM de pesos abiertos como Qwen, GLM, Gemma y Kimi) y mira cuántos mineros lo sirven y cuánto cuesta antes de confirmar. Tu pregunta se cifra en el navegador para que solo los mineros que sirven ese modelo puedan leerla, y la respuesta vuelve cifrada para tu billetera. Actualizada para cada mejora de la red Keryx, incluida H15 (inferencia verificable).
 ⇄ Conexiones con dApps: permisos por sitio, pagos, firma de mensajes, solicitudes de IA y firma avanzada de scripts (reclamo y reembolso HTLC). Cada solicitud muestra el sitio, los montos y las salidas antes de que la apruebes. Desconecta un sitio cuando quieras desde Configuración.
 ⊕ Crear o importar: frase semilla BIP39 de 24 palabras con un paso de respaldo guiado, o restauración desde cualquier frase de 12 o 24 palabras

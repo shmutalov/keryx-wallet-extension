@@ -314,5 +314,20 @@
   "receive_hint_phone": { "message": "Opens this address on the Keryx explorer in the phone’s browser. Long-press the address there to copy it." },
   "receive_only_krx": { "message": "Send only KRX on the Keryx network to this address." },
   "receive_qr_label_phone": { "message": "QR code linking to your address on the Keryx explorer" },
-  "dash_consolidate": { "message": "Consolidate — coming in the next release." }
+  "title_consolidate": { "message": "Consolidate UTXOs" },
+  "consolidate_intro": { "message": "Pool payouts pile up as many small UTXOs, and one transaction has room for only about 80 of them, so large sends fail until they are merged. Consolidation sends your spendable UTXOs back to your own address in batches of 80, paying the 0.3 KRX network fee per batch." },
+  "consolidate_spendable": { "message": "Spendable UTXOs" },
+  "consolidate_waiting": { "message": "Not spendable yet" },
+  "consolidate_waiting_hint": { "message": "Mining rewards younger than 1,000 DAA (about 100 seconds) and unconfirmed payments can’t be spent yet, so they stay as they are." },
+  "consolidate_est_txs": { "message": "Transactions (estimate)" },
+  "consolidate_est_fees": { "message": "Fees (estimate)" },
+  "consolidate_nothing": { "message": "Nothing to consolidate: fewer than two spendable UTXOs." },
+  "consolidate_keep_open": { "message": "Keep this window open until it finishes. If it closes, open Consolidate again and it continues where it stopped." },
+  "consolidate_start": { "message": "Consolidate" },
+  "consolidate_progress": { "message": "Round $1: batch $2 of $3 sent…" },
+  "consolidate_done": { "message": "Done. Transactions sent: $1. Fees: $2 KRX. The new balance can take a few seconds to show." },
+  "consolidate_stalled": { "message": "Transactions sent: $1. The node hasn’t caught up with them yet. Wait a minute, then press Consolidate again to finish." },
+  "consolidate_stopped": { "message": "Stopped (transactions sent: $1): $2. Press Consolidate to continue." },
+  "send_too_many_utxos": { "message": "This amount needs $1 UTXOs, more than fit in one transaction. Consolidate your UTXOs, then send again." },
+  "dash_consolidate": { "message": "⇊ Consolidate UTXOs →" }
 }

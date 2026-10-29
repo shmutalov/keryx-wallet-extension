@@ -14,7 +14,8 @@ import {
   shortAddress,
   DERIVATION_BASE,
 } from '../lib/keryx.js';
-import { buildTransferTx, MIN_FEE_SOMPI } from '../lib/tx.js';
+import { buildTransferTx, computeMass, MAX_STANDARD_MASS, MIN_FEE_SOMPI } from '../lib/tx.js';
+import { planConsolidation, estimateTxCount, consolidate, UTXO_FETCH_LIMIT } from '../lib/consolidate.js';
 import {
   selectableModels,
   getModel,
@@ -1394,6 +1395,15 @@ function renderSend() {
         privateKeyHex: state.wallet.privateKeyHex,
         currentDaaScore: info?.last_daa_score ?? 0,
       });
+      if (computeMass(built.tx) > MAX_STANDARD_MASS) {
+        // too many small UTXOs for one transaction — the node would reject it
+        setStatus('error',
+          el('div', {}, t('send_too_many_utxos', built.tx.inputs.length)),
+          el('button', {
+            id: 'send-consolidate-btn', class: 'btn-small', style: 'margin-top:6px', onclick: renderConsolidate,
+          }, t('dash_consolidate')));
+        return;
+      }
       submit.textContent = t('status_broadcasting');
       const res = await api.broadcast(built.tx);
       await pushRecentAddress(dest);
@@ -1611,6 +1621,88 @@ function renderReceive() {
   );
 }
 
+/** Consolidate: merge small UTXOs (pool payouts) so large sends fit one transaction. */
+function renderConsolidate() {
+  const { address } = state.wallet;
+  let running = false;
+
+  const row = (k, v) => el('div', { class: 'settings-row' }, el('span', {}, k), el('span', {}, v));
+  const summary = el('div', { id: 'consolidate-summary' }, el('span', { class: 'hint' }, t('common_loading')));
+  const statusBox = el('div', { id: 'consolidate-status', style: 'display:none' });
+  const start = el('button', { id: 'consolidate-start-btn', class: 'btn', disabled: '' }, t('consolidate_start'));
+  const back = el('button', { class: 'link-btn', onclick: renderDashboard }, t('nav_back'));
+  const setStatus = (ok, text) => {
+    statusBox.className = ok ? 'success-box' : 'error-box';
+    statusBox.textContent = text;
+    statusBox.style.display = '';
+  };
+
+  async function loadSummary() {
+    try {
+      const [utxos, info, total] = await Promise.all([
+        api.utxos(address, UTXO_FETCH_LIMIT),
+        api.info(),
+        api.utxoCount(address).catch(() => null),
+      ]);
+      const { eligible, batches } = planConsolidation(utxos, info?.last_daa_score ?? 0);
+      const waiting = utxos.length - eligible.length;
+      // a full page means more UTXOs than one fetch returns: count the rest from the total
+      const spendable = utxos.length >= UTXO_FETCH_LIMIT && total?.count > utxos.length
+        ? total.count - waiting
+        : eligible.length;
+      const txs = estimateTxCount(spendable);
+      summary.replaceChildren(
+        row(t('consolidate_spendable'), spendable.toLocaleString('en-US')),
+        row(t('consolidate_waiting'), waiting.toLocaleString('en-US')),
+        row(t('consolidate_est_txs'), `~${txs.toLocaleString('en-US')}`),
+        row(t('consolidate_est_fees'), `~${formatKRX(txs * MIN_FEE_SOMPI)} KRX`)
+      );
+      if (!batches.length) {
+        summary.append(el('p', { class: 'hint', style: 'text-align:left;margin-top:6px' }, t('consolidate_nothing')));
+      }
+      if (batches.length && !running) start.removeAttribute('disabled');
+      else start.setAttribute('disabled', '');
+    } catch (e) {
+      summary.replaceChildren(el('div', { class: 'error-text' }, e instanceof Error ? e.message : String(e)));
+    }
+  }
+
+  start.addEventListener('click', async () => {
+    if (running) return;
+    running = true;
+    start.setAttribute('disabled', '');
+    back.setAttribute('disabled', ''); // leaving mid-run would hide the progress
+    setStatus(true, t('status_loading_utxos'));
+    const res = await consolidate({
+      api,
+      address,
+      privateKeyHex: state.wallet.privateKeyHex,
+      onProgress: ({ round, done, total }) => setStatus(true, t('consolidate_progress', round, done, total)),
+    });
+    running = false;
+    back.removeAttribute('disabled');
+    if (res.error) setStatus(false, t('consolidate_stopped', res.sent, res.error.message));
+    else if (res.stalled) setStatus(false, t('consolidate_stalled', res.sent));
+    else setStatus(true, t('consolidate_done', res.sent, formatKRX(res.fees)));
+    setTimeout(loadSummary, 3000); // give the indexer a moment to show the merged UTXOs
+  });
+
+  show(
+    el('div', { class: 'back-row' }, back, el('h2', {}, t('title_consolidate'))),
+    el('div', { class: 'card stack' },
+      el('p', { class: 'hint', style: 'text-align:left' }, t('consolidate_intro')),
+      summary,
+      el('p', { class: 'hint', style: 'text-align:left' }, t('consolidate_waiting_hint'))
+    ),
+    el('div', { class: 'card stack' },
+      el('p', { class: 'hint', style: 'text-align:left' }, t('consolidate_keep_open')),
+      statusBox,
+      start
+    )
+  );
+  loadSummary();
+}
+
 function renderDashboard() {
   const acct = activeAccount();
   const { address } = state.wallet;
@@ -1777,7 +1869,7 @@ function renderDashboard() {
       el('button', { id: 'send-btn', class: 'btn', onclick: renderSend }, t('dash_send')),
       el('button', { id: 'inference-btn', class: 'btn ghost', onclick: renderInference }, t('dash_inference'))),
     txCard,
-    el('p', { class: 'hint', style: 'margin-top:2px' },
+    el('button', { id: 'consolidate-btn', class: 'link-btn', style: 'margin-top:2px', onclick: renderConsolidate },
       t('dash_consolidate'))
   );
 

@@ -281,5 +281,20 @@
   "receive_hint_phone": { "message": "Öffnet diese Adresse im Keryx-Explorer im Browser des Telefons. Halten Sie die Adresse dort gedrückt, um sie zu kopieren." },
   "receive_only_krx": { "message": "Senden Sie an diese Adresse nur KRX im Keryx-Netzwerk." },
   "receive_qr_label_phone": { "message": "QR-Code mit Link zu Ihrer Adresse im Keryx-Explorer" },
-  "dash_consolidate": { "message": "Konsolidieren — kommt in der nächsten Version." }
+  "title_consolidate": { "message": "UTXOs zusammenführen" },
+  "consolidate_intro": { "message": "Pool-Auszahlungen sammeln sich als viele kleine UTXOs an, und eine Transaktion fasst nur etwa 80 davon. Große Überweisungen scheitern deshalb, bis die UTXOs zusammengeführt sind. Dabei werden Ihre ausgebbaren UTXOs in Gruppen zu 80 an Ihre eigene Adresse zurückgesendet; pro Gruppe fällt die Netzwerkgebühr von 0,3 KRX an." },
+  "consolidate_spendable": { "message": "Ausgebbare UTXOs" },
+  "consolidate_waiting": { "message": "Noch nicht ausgebbar" },
+  "consolidate_waiting_hint": { "message": "Mining-Belohnungen, die jünger als 1.000 DAA (etwa 100 Sekunden) sind, und unbestätigte Zahlungen sind noch nicht ausgebbar und bleiben unverändert." },
+  "consolidate_est_txs": { "message": "Transaktionen (Schätzung)" },
+  "consolidate_est_fees": { "message": "Gebühren (Schätzung)" },
+  "consolidate_nothing": { "message": "Nichts zusammenzuführen: weniger als zwei ausgebbare UTXOs." },
+  "consolidate_keep_open": { "message": "Lassen Sie dieses Fenster geöffnet, bis der Vorgang abgeschlossen ist. Falls es sich schließt, öffnen Sie „Zusammenführen“ erneut – es geht dort weiter, wo es aufgehört hat." },
+  "consolidate_start": { "message": "Zusammenführen" },
+  "consolidate_progress": { "message": "Runde $1: Gruppe $2 von $3 gesendet…" },
+  "consolidate_done": { "message": "Fertig. Gesendete Transaktionen: $1. Gebühren: $2 KRX. Das neue Guthaben kann einige Sekunden brauchen, bis es angezeigt wird." },
+  "consolidate_stalled": { "message": "Gesendete Transaktionen: $1. Der Node hat sie noch nicht übernommen. Warten Sie eine Minute und drücken Sie dann erneut „Zusammenführen“, um abzuschließen." },
+  "consolidate_stopped": { "message": "Abgebrochen (gesendete Transaktionen: $1): $2. Drücken Sie „Zusammenführen“, um fortzufahren." },
+  "send_too_many_utxos": { "message": "Für diesen Betrag sind $1 UTXOs nötig – mehr, als in eine Transaktion passen. Führen Sie Ihre UTXOs zusammen und senden Sie dann erneut." },
+  "dash_consolidate": { "message": "⇊ UTXOs zusammenführen →" }
 }

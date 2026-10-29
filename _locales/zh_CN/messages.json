@@ -281,5 +281,20 @@
   "receive_hint_phone": { "message": "在手机浏览器中打开 Keryx 区块浏览器上的此地址。长按地址即可复制。" },
   "receive_only_krx": { "message": "请仅向此地址发送 Keryx 网络上的 KRX。" },
   "receive_qr_label_phone": { "message": "链接到 Keryx 区块浏览器上您的地址的二维码" },
-  "dash_consolidate": { "message": "整合——将在下一版本推出。" }
+  "title_consolidate": { "message": "合并 UTXO" },
+  "consolidate_intro": { "message": "矿池收益会累积成大量小额 UTXO，而一笔交易只能容纳约 80 个，因此在合并之前，大额转账会失败。合并会将您可用的 UTXO 以每批 80 个发送回您自己的地址，每批支付 0.3 KRX 网络手续费。" },
+  "consolidate_spendable": { "message": "可用 UTXO" },
+  "consolidate_waiting": { "message": "暂不可用" },
+  "consolidate_waiting_hint": { "message": "未满 1,000 DAA（约 100 秒）的挖矿奖励和未确认的付款暂时无法使用，因此保持不变。" },
+  "consolidate_est_txs": { "message": "交易数（估计）" },
+  "consolidate_est_fees": { "message": "手续费（估计）" },
+  "consolidate_nothing": { "message": "无需合并：可用 UTXO 少于两个。" },
+  "consolidate_keep_open": { "message": "请在完成前保持此窗口打开。如果窗口关闭，请重新打开“合并”，它会从中断处继续。" },
+  "consolidate_start": { "message": "合并" },
+  "consolidate_progress": { "message": "第 $1 轮：已发送第 $2 批，共 $3 批…" },
+  "consolidate_done": { "message": "完成。已发送交易：$1 笔。手续费：$2 KRX。新余额可能需要几秒钟才会显示。" },
+  "consolidate_stalled": { "message": "已发送交易：$1 笔。节点尚未同步这些交易。请等待一分钟，然后再次点击“合并”完成。" },
+  "consolidate_stopped": { "message": "已停止（已发送交易：$1 笔）：$2。点击“合并”继续。" },
+  "send_too_many_utxos": { "message": "此金额需要 $1 个 UTXO，超出了一笔交易的容量。请先合并 UTXO，然后再发送。" },
+  "dash_consolidate": { "message": "⇊ 合并 UTXO →" }
 }

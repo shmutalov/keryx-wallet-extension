@@ -167,6 +167,31 @@ export function transactionSigningHash(tx, idx, hashType = SIGHASH_ALL) {
   return h.digest();
 }
 
+/** Largest compute mass the mempool relays (keryx-node MAXIMUM_STANDARD_TRANSACTION_MASS). */
+export const MAX_STANDARD_MASS = 100000;
+
+/**
+ * Compute mass of a signed wire transaction, as keryx-node calculates it
+ * (consensus/core/src/mass): estimated serialized size, plus 10 per output
+ * script byte (its u16 version included), plus 1000 per sig op. A signed
+ * P2PK input weighs 1,118 and an output 412, so at most 88 inputs fit.
+ */
+export function computeMass(tx) {
+  let size = 2 + 8 + 8 + 8 + 20 + 8 + 32 + 8 + tx.payload.length / 2; // header, payload hash, payload
+  let sigOps = 0;
+  for (const inp of tx.inputs) {
+    size += 32 + 4 + 8 + inp.signature_script.length / 2 + 8; // outpoint, script, sequence
+    sigOps += inp.sig_op_count;
+  }
+  let scriptBytes = 0;
+  for (const out of tx.outputs) {
+    const len = out.script_public_key.length / 2;
+    size += 8 + 2 + 8 + len;
+    scriptBytes += 2 + len;
+  }
+  return size + scriptBytes * 10 + sigOps * 1000;
+}
+
 /** UTXOs that are confirmed and past coinbase maturity. */
 export function spendableUtxos(utxos, currentDaaScore = 0) {
   return utxos.filter(

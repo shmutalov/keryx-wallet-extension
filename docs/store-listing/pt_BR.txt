@@ -9,6 +9,7 @@ RECURSOS
 ◈ Painel ao vivo: saldo em KRX com estimativa em USD, quantidade de UTXOs, status da rede e histórico completo de transações com links para o explorador
 ➤ Enviar KRX: as transações são montadas e assinadas inteiramente no seu navegador (Schnorr BIP340, sighash no estilo Kaspa) e depois transmitidas
 ▣ Receber KRX: seu endereço como código QR, pronto para escanear ou copiar
+⇊ Consolidar UTXOs: junte muitos pagamentos pequenos de mineração em lotes de 80 para que envios grandes funcionem
 ✦ IA privada: escolha um modelo (LLMs de pesos abertos como Qwen, GLM, Gemma e Kimi) e veja quantos mineradores o atendem e quanto custa antes de confirmar. Sua pergunta é criptografada no navegador para que apenas os mineradores que atendem esse modelo possam lê-la, e a resposta volta criptografada para a sua carteira. Atualizada a cada upgrade da rede Keryx, incluindo o H15 (inferência verificável).
 ⇄ Conexões com dApps: permissões por site, pagamentos, assinatura de mensagens, solicitações de IA e assinatura avançada de scripts (claim e refund de HTLC). Cada solicitação mostra o site, os valores e as saídas antes de você aprovar. Desconecte um site a qualquer momento nas Configurações.
 ⊕ Criar ou importar: frase semente BIP39 de 24 palavras com uma etapa de backup guiada, ou restauração a partir de qualquer frase de 12 ou 24 palavras

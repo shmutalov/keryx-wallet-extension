@@ -9,6 +9,7 @@ FEATURES
 ◈ Live dashboard: KRX balance with a USD estimate, UTXO count, network status and full transaction history with explorer links
 ➤ Send KRX: transactions are built and signed entirely in your browser (BIP340 Schnorr, Kaspa-style sighash) and then broadcast
 ▣ Receive KRX: your address as a QR code, ready to scan or copy
+⇊ Consolidate UTXOs: merge many small mining payouts in batches of 80, so large sends go through
 ✦ Private AI: choose a model (open-weight LLMs such as Qwen, GLM, Gemma and Kimi) and see how many miners serve it and what it costs before you confirm. Your prompt is encrypted in the browser so that only the miners serving that model can read it, and the answer is encrypted back to your wallet. Kept up to date with every Keryx network upgrade, including H15 verifiable inference.
 ⇄ dApp connections: per-site permissions, payments, message signing, AI requests and advanced script signing (HTLC claim and refund). Every request shows the site, amounts and outputs before you approve it. Disconnect a site at any time in Settings.
 ⊕ Create or import: a 24-word BIP39 seed phrase with a guided backup step, or restore from any 12- or 24-word phrase

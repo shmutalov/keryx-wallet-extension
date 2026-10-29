@@ -281,5 +281,20 @@
   "receive_hint_phone": { "message": "Abre esta dirección en el explorador de Keryx, en el navegador del teléfono. Mantén pulsada la dirección para copiarla." },
   "receive_only_krx": { "message": "Envía a esta dirección solo KRX de la red Keryx." },
   "receive_qr_label_phone": { "message": "Código QR con un enlace a tu dirección en el explorador de Keryx" },
-  "dash_consolidate": { "message": "Consolidar — disponible en la próxima versión." }
+  "title_consolidate": { "message": "Consolidar UTXOs" },
+  "consolidate_intro": { "message": "Los pagos del pool se acumulan como muchos UTXOs pequeños, y una transacción solo tiene espacio para unos 80, así que los envíos grandes fallan hasta que se juntan. La consolidación envía tus UTXOs disponibles de vuelta a tu propia dirección en lotes de 80, pagando la comisión de red de 0,3 KRX por lote." },
+  "consolidate_spendable": { "message": "UTXOs disponibles" },
+  "consolidate_waiting": { "message": "Aún no disponibles" },
+  "consolidate_waiting_hint": { "message": "Las recompensas de minería con menos de 1.000 DAA (unos 100 segundos) y los pagos sin confirmar todavía no se pueden gastar, así que quedan como están." },
+  "consolidate_est_txs": { "message": "Transacciones (estimación)" },
+  "consolidate_est_fees": { "message": "Comisiones (estimación)" },
+  "consolidate_nothing": { "message": "Nada que consolidar: hay menos de dos UTXOs disponibles." },
+  "consolidate_keep_open": { "message": "Mantén esta ventana abierta hasta que termine. Si se cierra, vuelve a abrir Consolidar y seguirá donde se quedó." },
+  "consolidate_start": { "message": "Consolidar" },
+  "consolidate_progress": { "message": "Ronda $1: lote $2 de $3 enviado…" },
+  "consolidate_done": { "message": "Listo. Transacciones enviadas: $1. Comisiones: $2 KRX. El nuevo saldo puede tardar unos segundos en aparecer." },
+  "consolidate_stalled": { "message": "Transacciones enviadas: $1. El nodo aún no las ha registrado. Espera un minuto y vuelve a pulsar Consolidar para terminar." },
+  "consolidate_stopped": { "message": "Detenido (transacciones enviadas: $1): $2. Pulsa Consolidar para continuar." },
+  "send_too_many_utxos": { "message": "Este monto necesita $1 UTXOs, más de los que caben en una transacción. Consolida tus UTXOs y vuelve a enviar." },
+  "dash_consolidate": { "message": "⇊ Consolidar UTXOs →" }
 }

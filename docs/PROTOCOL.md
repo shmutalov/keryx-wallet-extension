@@ -160,6 +160,21 @@ batch eligible UTXOs in groups of 80; each batch is a self-send of
 500 ms between waves, 4 s between rounds; ignore "already accepted" errors;
 skip batches whose value ≤ fee.
 
+This wallet (`src/lib/consolidate.js`) follows that flow with two refinements: a lone
+leftover UTXO waits for the next round instead of paying a fee to move alone, and a
+batch whose single output would break the KIP-9 storage-mass limit (relaxed formula
+for |O| = 1: `C/out − Σ C/in`, C = 1e12) is skipped. Batches are built in outpoint
+order, so a batch rebuilt from a stale indexer fetch has the same txid (Kaspa txids
+exclude signature scripts). Mempool replies treated as "already on its way"
+(keryx-node `mining/errors/src/mempool.rs`): `…was already accepted by the consensus`,
+`…is already in the mempool`, `…already spent by transaction … in the mempool`,
+`…is already in the orphan pool`.
+
+**Mass** (keryx-node `consensus/core/src/mass`, standard limit 100,000): estimated
+serialized size + 10 per output script byte (incl. its u16 version) + 1000 per sig op.
+Header 94 bytes; a signed P2PK input weighs 1,118 and an output 412, so an 80-input
+consolidation is 89,946 and a transaction holds at most 88 such inputs.
+
 ## AI inference (confirmed from keryx-labs.com/infer, 2026-07-06)
 
 **AiRequest transaction**: subnetwork id `03…00`, binary payload (hex-encoded):
