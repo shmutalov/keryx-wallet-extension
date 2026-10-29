@@ -296,5 +296,7 @@
   "consolidate_stalled": { "message": "Transações enviadas: $1. O nó ainda não as registrou. Aguarde um minuto e toque em Consolidar de novo para terminar." },
   "consolidate_stopped": { "message": "Interrompido (transações enviadas: $1): $2. Toque em Consolidar para continuar." },
   "send_too_many_utxos": { "message": "Este valor precisa de $1 UTXOs, mais do que cabe em uma transação. Consolide seus UTXOs e envie de novo." },
+  "dash_consolidate_inline": { "message": "⇊ Consolidar →" },
+  "consolidate_back": { "message": "✓ Pronto – voltar à carteira" },
   "dash_consolidate": { "message": "⇊ Consolidar UTXOs →" }
 }

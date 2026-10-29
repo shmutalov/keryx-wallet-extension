@@ -15,7 +15,7 @@ import {
   DERIVATION_BASE,
 } from '../lib/keryx.js';
 import { buildTransferTx, computeMass, MAX_STANDARD_MASS, MIN_FEE_SOMPI } from '../lib/tx.js';
-import { planConsolidation, estimateTxCount, consolidate, UTXO_FETCH_LIMIT } from '../lib/consolidate.js';
+import { planConsolidation, estimateTxCount, consolidate, CONSOLIDATE_BATCH, UTXO_FETCH_LIMIT } from '../lib/consolidate.js';
 import {
   selectableModels,
   getModel,
@@ -1625,6 +1625,7 @@ function renderReceive() {
 function renderConsolidate() {
   const { address } = state.wallet;
   let running = false;
+  let finished = false; // a completed run turns the button into "back to wallet"
 
   const row = (k, v) => el('div', { class: 'settings-row' }, el('span', {}, k), el('span', {}, v));
   const summary = el('div', { id: 'consolidate-summary' }, el('span', { class: 'hint' }, t('common_loading')));
@@ -1660,6 +1661,7 @@ function renderConsolidate() {
       if (!batches.length) {
         summary.append(el('p', { class: 'hint', style: 'text-align:left;margin-top:6px' }, t('consolidate_nothing')));
       }
+      if (finished) return;
       if (batches.length && !running) start.removeAttribute('disabled');
       else start.setAttribute('disabled', '');
     } catch (e) {
@@ -1668,6 +1670,7 @@ function renderConsolidate() {
   }
 
   start.addEventListener('click', async () => {
+    if (finished) return renderDashboard();
     if (running) return;
     running = true;
     start.setAttribute('disabled', '');
@@ -1683,7 +1686,12 @@ function renderConsolidate() {
     back.removeAttribute('disabled');
     if (res.error) setStatus(false, t('consolidate_stopped', res.sent, res.error.message));
     else if (res.stalled) setStatus(false, t('consolidate_stalled', res.sent));
-    else setStatus(true, t('consolidate_done', res.sent, formatKRX(res.fees)));
+    else {
+      setStatus(true, t('consolidate_done', res.sent, formatKRX(res.fees)));
+      finished = true;
+      start.textContent = t('consolidate_back');
+    }
+    start.removeAttribute('disabled'); // back to wallet when done, retry otherwise
     setTimeout(loadSummary, 3000); // give the indexer a moment to show the merged UTXOs
   });
 
@@ -1738,9 +1746,13 @@ function renderDashboard() {
           `≈ $${usd.toLocaleString('en-US', { maximumFractionDigits: 2 })} · $${market.price_usd.toFixed(8).replace(/0+$/, '')}/KRX`));
       }
       if (utxo && typeof utxo.count === 'number') {
+        const recommended = utxo.count >= CONSOLIDATE_BATCH; // past one batch, large sends start to fail
         parts.push(
-          el('div', { class: `balance-meta${utxo.count >= 80 ? ' warn' : ''}` },
-            t('utxos_count', utxo.count.toLocaleString('en-US')) + (utxo.count >= 80 ? t('consolidation_recommended') : ''))
+          el('div', { class: `balance-meta${recommended ? ' warn' : ''}` },
+            t('utxos_count', utxo.count.toLocaleString('en-US')) + (recommended ? t('consolidation_recommended') : ''),
+            utxo.count > 1
+              ? el('button', { id: 'consolidate-btn', class: 'link-btn', onclick: renderConsolidate }, t('dash_consolidate_inline'))
+              : null)
         );
       }
       setStatus(true);
@@ -1868,9 +1880,7 @@ function renderDashboard() {
     el('div', { class: 'actions-row' },
       el('button', { id: 'send-btn', class: 'btn', onclick: renderSend }, t('dash_send')),
       el('button', { id: 'inference-btn', class: 'btn ghost', onclick: renderInference }, t('dash_inference'))),
-    txCard,
-    el('button', { id: 'consolidate-btn', class: 'link-btn', style: 'margin-top:2px', onclick: renderConsolidate },
-      t('dash_consolidate'))
+    txCard
   );
 
   loadOverview();

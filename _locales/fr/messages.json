@@ -296,5 +296,7 @@
   "consolidate_stalled": { "message": "Transactions envoyées : $1. Le nœud ne les a pas encore prises en compte. Attendez une minute, puis appuyez de nouveau sur Consolider pour terminer." },
   "consolidate_stopped": { "message": "Arrêté (transactions envoyées : $1) : $2. Appuyez sur Consolider pour continuer." },
   "send_too_many_utxos": { "message": "Ce montant nécessite $1 UTXO, plus qu’une transaction ne peut en contenir. Consolidez vos UTXO, puis renvoyez." },
+  "dash_consolidate_inline": { "message": "⇊ Consolider →" },
+  "consolidate_back": { "message": "✓ Terminé – retour au portefeuille" },
   "dash_consolidate": { "message": "⇊ Consolider les UTXO →" }
 }

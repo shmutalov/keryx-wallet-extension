@@ -296,5 +296,7 @@
   "consolidate_stalled": { "message": "已发送交易：$1 笔。节点尚未同步这些交易。请等待一分钟，然后再次点击“合并”完成。" },
   "consolidate_stopped": { "message": "已停止（已发送交易：$1 笔）：$2。点击“合并”继续。" },
   "send_too_many_utxos": { "message": "此金额需要 $1 个 UTXO，超出了一笔交易的容量。请先合并 UTXO，然后再发送。" },
+  "dash_consolidate_inline": { "message": "⇊ 合并 →" },
+  "consolidate_back": { "message": "✓ 完成，返回钱包" },
   "dash_consolidate": { "message": "⇊ 合并 UTXO →" }
 }

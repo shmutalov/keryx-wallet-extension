@@ -329,5 +329,7 @@
   "consolidate_stalled": { "message": "Transactions sent: $1. The node hasn’t caught up with them yet. Wait a minute, then press Consolidate again to finish." },
   "consolidate_stopped": { "message": "Stopped (transactions sent: $1): $2. Press Consolidate to continue." },
   "send_too_many_utxos": { "message": "This amount needs $1 UTXOs, more than fit in one transaction. Consolidate your UTXOs, then send again." },
+  "dash_consolidate_inline": { "message": "⇊ Consolidate →" },
+  "consolidate_back": { "message": "✓ Done — back to wallet" },
   "dash_consolidate": { "message": "⇊ Consolidate UTXOs →" }
 }

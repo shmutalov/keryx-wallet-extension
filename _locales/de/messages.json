@@ -296,5 +296,7 @@
   "consolidate_stalled": { "message": "Gesendete Transaktionen: $1. Der Node hat sie noch nicht übernommen. Warten Sie eine Minute und drücken Sie dann erneut „Zusammenführen“, um abzuschließen." },
   "consolidate_stopped": { "message": "Abgebrochen (gesendete Transaktionen: $1): $2. Drücken Sie „Zusammenführen“, um fortzufahren." },
   "send_too_many_utxos": { "message": "Für diesen Betrag sind $1 UTXOs nötig – mehr, als in eine Transaktion passen. Führen Sie Ihre UTXOs zusammen und senden Sie dann erneut." },
+  "dash_consolidate_inline": { "message": "⇊ Zusammenführen →" },
+  "consolidate_back": { "message": "✓ Fertig – zurück zur Wallet" },
   "dash_consolidate": { "message": "⇊ UTXOs zusammenführen →" }
 }

@@ -832,6 +832,16 @@ textarea::placeholder {
   color: var(--mx-green);
 }
 
+.balance-meta .link-btn {
+  margin-left: 8px;
+  font-size: inherit;
+  color: var(--mx-bright);
+}
+
+.balance-meta .link-btn:hover {
+  text-decoration: underline;
+}
+
 .net-row {
   display: flex;
   justify-content: space-between;

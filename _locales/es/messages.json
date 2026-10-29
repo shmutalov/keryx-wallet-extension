@@ -296,5 +296,7 @@
   "consolidate_stalled": { "message": "Transacciones enviadas: $1. El nodo aún no las ha registrado. Espera un minuto y vuelve a pulsar Consolidar para terminar." },
   "consolidate_stopped": { "message": "Detenido (transacciones enviadas: $1): $2. Pulsa Consolidar para continuar." },
   "send_too_many_utxos": { "message": "Este monto necesita $1 UTXOs, más de los que caben en una transacción. Consolida tus UTXOs y vuelve a enviar." },
+  "dash_consolidate_inline": { "message": "⇊ Consolidar →" },
+  "consolidate_back": { "message": "✓ Listo: volver a la billetera" },
   "dash_consolidate": { "message": "⇊ Consolidar UTXOs →" }
 }

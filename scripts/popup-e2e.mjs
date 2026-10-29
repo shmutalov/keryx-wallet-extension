@@ -135,6 +135,9 @@ globalThis.fetch = async (url, init) => {
     ipfsCalls.push(u);
     return new Response('not found', { status: 404 });
   }
+  if (u.endsWith('/utxos/count')) {
+    return new Response(JSON.stringify({ count: (mockUtxos ?? MOCK_UTXOS).length }), { status: 200 });
+  }
   if (u.includes('/utxos?')) {
     return new Response(JSON.stringify(mockUtxos ?? MOCK_UTXOS), { status: 200 });
   }
@@ -334,11 +337,13 @@ check('15i', 'broadcast tx pays 1.5 KRX to picked address with change - fee',
 check('15j', 'destination saved to recents', localStore.krx_recent?.[0]?.address === addr2);
 check('15k', 'no save-to-book offer for known address', !byId('save-dest-btn'));
 
-app().querySelector('.link-btn').click(); // back to dashboard
-await until(() => !!byId('lock-btn'), 10);
-
 // --- consolidate: the two mocked 3 KRX UTXOs merge into one self-send ---
-mockDaa = 5000; // /info mocked, so maturity filtering doesn't depend on the live node
+mockDaa = 5000; // /info and /balance mocked, so the dashboard and maturity don't depend on the live node
+mockBalance = true;
+app().querySelector('.link-btn').click(); // back to dashboard
+await until(() => !!byId('consolidate-btn'), 20);
+check('15k0', 'with 2 UTXOs the balance card offers Consolidate next to the UTXO count',
+  !!byId('consolidate-btn')?.closest('.balance-meta')?.textContent.includes('2 UTXOs'));
 const consolidateSummary = () => byId('consolidate-summary')?.textContent ?? '';
 byId('consolidate-btn').click();
 await until(() => byId('consolidate-start-btn') && !byId('consolidate-start-btn').disabled, 20);
@@ -354,12 +359,15 @@ check('15k2', 'consolidation broadcasts one self-send of both UTXOs minus the 0.
   broadcastBody.outputs[0].amount === 6_00000000 - 30000000 &&
   broadcastBody.outputs[0].script_public_key === addressToScriptPublicKey(addr),
   byId('consolidate-status')?.textContent);
+check('15k2b', 'when done, the button turns into an enabled "back to wallet"',
+  byId('consolidate-start-btn').textContent === '✓ Done — back to wallet' && !byId('consolidate-start-btn').disabled);
 
 // --- a send needing more inputs than fit one transaction stops before broadcast ---
 mockUtxos = Array.from({ length: 100 }, (_, i) =>
   ({ ...MOCK_UTXOS[0], transaction_id: i.toString(16).padStart(64, 'c'), amount_sompi: 10000000 })); // 100 x 0.1 KRX
-app().querySelector('.link-btn').click(); // back to dashboard
+byId('consolidate-start-btn').click(); // "back to wallet"
 await until(() => !!byId('send-btn'), 10);
+check('15k2c', '"back to wallet" returns to the dashboard', !!byId('lock-btn') && !!byId('send-btn'));
 byId('send-btn').click();
 await sleep(100);
 byId('dest-input').value = addr2;
@@ -377,9 +385,11 @@ byId('send-consolidate-btn').click();
 await until(() => consolidateSummary().includes('Spendable UTXOs100'), 20);
 check('15k4', 'its Consolidate button opens the merge of all 100 (~3 transactions)',
   consolidateSummary().includes('~3'), consolidateSummary());
-mockUtxos = null;
+mockUtxos = [MOCK_UTXOS[0]];
 app().querySelector('.link-btn').click(); // back to dashboard
-await until(() => !!byId('lock-btn'), 10);
+await until(() => app().textContent.includes('1 UTXOs'), 20);
+check('15k5', 'with a single UTXO the dashboard offers no Consolidate link', !byId('consolidate-btn'));
+mockUtxos = null;
 
 // --- AI inference: dedicated page, cost math, vaulted AiRequest broadcast (H8 reward routing) ---
 mockBalance = true;
