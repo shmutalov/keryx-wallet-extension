@@ -5,7 +5,8 @@
     "build": "node build.mjs",
     "test:e2e": "node scripts/popup-e2e.mjs",
     "test:provider": "node scripts/provider-e2e.mjs",
-    "test": "node scripts/tx-unit.mjs && node scripts/provider-e2e.mjs && node scripts/popup-e2e.mjs"
+    "test": "node scripts/tx-unit.mjs && node scripts/provider-e2e.mjs && node scripts/popup-e2e.mjs",
+    "store-assets": "node scripts/store-assets/build.mjs"
   },
   "keywords": [],
   "author": "",

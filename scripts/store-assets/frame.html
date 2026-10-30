@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Keryx Wallet store screenshot</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500&display=block">
+<script src="/assets/stage-config.js"></script>
+<style>
+  /* 1280×800 store screenshot: caption left, the live popup (scaled 1.2) right. */
+  :root { --bg: #070a08; --bright: #30ff67; --ink: #e2f7e6; --muted: #8db897; --grid: rgba(48, 255, 103, 0.05); }
+  html, body { margin: 0; width: 1280px; height: 800px; overflow: hidden; }
+  body {
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", "Microsoft YaHei", sans-serif;
+    background:
+      radial-gradient(560px 520px at 950px 410px, rgba(48, 255, 103, 0.15), transparent 70%),
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 40px 40px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 40px 40px,
+      var(--bg);
+  }
+  .shot {
+    box-sizing: border-box; height: 800px; padding: 0 96px 0 88px;
+    display: grid; grid-template-columns: 1fr 450px; align-items: center; gap: 64px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; font: 700 17px/1 "JetBrains Mono", Consolas, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bright); }
+  h1 { margin: 30px 0 22px; font: 800 46px/1.14 "JetBrains Mono", Consolas, "Microsoft YaHei", monospace; letter-spacing: -0.02em; text-wrap: balance; }
+  p { margin: 0; max-width: 30ch; font-size: 21px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .device {
+    position: relative; width: 450px; height: 720px; border-radius: 14px; overflow: hidden; background: var(--bg);
+    box-shadow: 0 0 0 1px rgba(48, 255, 103, 0.28), 0 0 70px rgba(48, 255, 103, 0.14), 0 40px 90px rgba(0, 0, 0, 0.7);
+  }
+  /* the real popup scrolls past 600px; fade the cut instead of slicing a line of text */
+  .device.overflows::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 96px;
+    background: linear-gradient(rgba(7, 10, 8, 0), var(--bg)); pointer-events: none;
+  }
+  .device iframe { display: block; width: 375px; height: 600px; border: 0; transform: scale(1.2); transform-origin: 0 0; }
+</style>
+</head>
+<body>
+<main class="shot">
+  <section>
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#30ff67" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v18"/><path d="M8 12h3"/><path d="M11 12 17 4h3l-6 8 6 8h-3l-6-8"/><circle cx="8" cy="3" r="1.1" fill="#30ff67"/><circle cx="8" cy="21" r="1.1" fill="#30ff67"/><circle cx="20" cy="4" r="1.1" fill="#30ff67"/><circle cx="20" cy="20" r="1.1" fill="#30ff67"/></svg>
+      Keryx Wallet
+    </div>
+    <h1 id="headline"></h1>
+    <p id="subline"></p>
+  </section>
+  <div class="device"><iframe id="popup" title="Keryx Wallet popup"></iframe></div>
+</main>
+<script>
+  const q = new URLSearchParams(location.search);
+  const scene = q.get('scene') ?? 'dashboard';
+  const locale = q.get('locale') ?? 'en';
+  const [headline, subline] = STAGE.captions[locale][scene];
+  document.documentElement.lang = locale.replace('_', '-');
+  document.getElementById('headline').textContent = headline;
+  document.getElementById('subline').textContent = subline;
+  const frame = document.getElementById('popup');
+  frame.src = scene === 'approval'
+    ? `/ext/approval.html?id=demo&scene=approval&locale=${locale}`
+    : `/ext/popup.html?scene=${scene}&locale=${locale}`;
+  // size the frame like Chrome sizes the popup: its content height, 560–600 px (popup.css min-height)
+  const device = document.querySelector('.device');
+  const fit = () => {
+    const body = frame.contentDocument?.body; // its height is the content's, floored by min-height: 560px
+    if (body) {
+      device.style.height = `${Math.min(600, body.offsetHeight) * 1.2}px`;
+      device.classList.toggle('overflows', body.offsetHeight > 600);
+    }
+    setTimeout(fit, 200);
+  };
+  frame.addEventListener('load', fit);
+</script>
+</body>
+</html>

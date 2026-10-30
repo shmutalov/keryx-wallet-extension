@@ -71,6 +71,8 @@ manifest.json       MV3 manifest
 docs/PROTOCOL.md    Reverse-engineered Keryx protocol notes (addresses, sighash, tx format)
 docs/PROVIDER.md    window.keryx dApp API reference (incl. HTLC claim/refund examples)
 docs/store-listing/ Chrome Web Store listing: per-locale descriptions + dashboard checklist
+docs/store-assets/  Store screenshots (per locale) and promo tiles, rendered from the real
+                    bundle by scripts/store-assets/ (`npm run store-assets`)
 ```
 
 ## Security model

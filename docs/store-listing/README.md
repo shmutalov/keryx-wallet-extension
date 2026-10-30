@@ -8,7 +8,7 @@ The listing comes from three places — keep them in step when features change.
 |---|---|---|
 | Name and summary, all 7 languages | `ext_name` / `ext_description` in [`_locales/*/messages.json`](../../_locales) | ships with the next package version (pushing a `v*` tag) |
 | Detailed description | one paste-ready file per language: [`en.txt`](en.txt), [`de.txt`](de.txt), [`es.txt`](es.txt), [`fr.txt`](fr.txt), [`pt_BR.txt`](pt_BR.txt), [`ru.txt`](ru.txt), [`zh_CN.txt`](zh_CN.txt) | pasted in the dashboard: **Store listing → language picker → Description** |
-| Screenshots, promo tiles, video | [`docs/promo/`](../promo) | uploaded in the dashboard |
+| Screenshots and promo tiles | [`docs/store-assets/`](../store-assets), rendered by `npm run store-assets` | uploaded in the dashboard |
 
 The store caps the summary at 132 characters; `npm test` (check 25l) fails when a locale goes over. Name and summary carry the security promise, so translations need a native check (the catalogs flag `ext_description` as SAFETY-CRITICAL).
 
@@ -20,17 +20,17 @@ The store caps the summary at 132 characters; `npm test` (check 25l) fails when 
 
 The descriptions point to **Settings → About & support**, which ships in that same release — don't publish them on an older version.
 
-## Media checklist
+## Media
 
-Screenshots: 1280×800 (or 640×400), PNG or JPEG, up to 5, captions drawn into the image.
+`npm run store-assets` renders every image from the real extension bundle (built first): a local server stages a demo wallet and a mocked node, headless Chrome or Edge photographs each screen, and the PNGs are saved as 24-bit RGB, since the store rejects images with an alpha channel. `npm run store-assets -- en ru` limits it to some locales; `BROWSER=<path>` picks the browser. Re-run it after UI changes. Captions and the demo AI prompt live in [`scripts/store-assets/captions.js`](../../scripts/store-assets/captions.js).
 
-1. Dashboard — "Your KRX, one click from any tab"
-2. Private AI — "Ask private AI, pay per question in KRX"
-3. Send + address book — "Signed in your browser, keys stay on your device"
-4. dApp approval window — "You approve every dApp request"
-5. Accounts + language picker — "Multiple accounts, 7 languages"
+| File | Size | Upload to |
+|---|---|---|
+| `screenshots/<locale>/1-dashboard.png` … `5-approval.png` | 1280×800 | Store listing → that language → Screenshots, in number order. English also serves every language without its own set. |
+| `promo-tile-440x280.png` | 440×280 | Small promo tile (required for any featured placement) |
+| `marquee-1400x560.png` | 1400×560 | Marquee promo tile |
 
-Also: small promo tile 440×280 (required for any featured placement), marquee 1400×560, and an optional 30–60 s YouTube demo.
+The five screens: dashboard, private AI, Consolidate, Receive (Phone mode), and a dApp payment approval. The demo wallet is the public BIP39 test-vector mnemonic; its address in the images is empty, and nobody should fund it.
 
 ## Other dashboard fields
 
