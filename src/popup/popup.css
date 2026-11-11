@@ -608,6 +608,25 @@ textarea::placeholder {
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
 }
 
+/* show more (left) · copy (right) under an answer */
+.inf-result-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.inf-result-actions .link-btn {
+  font-size: 10px;
+}
+
+.inf-copy {
+  margin-left: auto;
+}
+
+.link-btn.copied {
+  color: var(--mx-bright);
+}
+
 #inf-feed {
   margin-top: 8px;
   max-height: 320px;

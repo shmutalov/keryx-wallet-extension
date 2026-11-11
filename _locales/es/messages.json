@@ -179,6 +179,7 @@
   "inf_fetching": { "message": "obteniendo respuesta…" },
   "inf_show_more": { "message": "▼ ver más" },
   "inf_show_less": { "message": "▲ ver menos" },
+  "inf_copy": { "message": "⧉ copiar" },
   "inf_no_requests": { "message": "Aún no se detectan solicitudes de inferencia." },
   "badge_slashed": { "message": "⚡ PENALIZADO" },
   "badge_challenged": { "message": "⚠ IMPUGNADO" },

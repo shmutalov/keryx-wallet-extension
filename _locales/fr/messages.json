@@ -179,6 +179,7 @@
   "inf_fetching": { "message": "récupération de la réponse…" },
   "inf_show_more": { "message": "▼ voir plus" },
   "inf_show_less": { "message": "▲ voir moins" },
+  "inf_copy": { "message": "⧉ copier" },
   "inf_no_requests": { "message": "Aucune demande d’inférence détectée pour l’instant." },
   "badge_slashed": { "message": "⚡ PÉNALISÉ" },
   "badge_challenged": { "message": "⚠ CONTESTÉ" },

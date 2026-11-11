@@ -179,6 +179,7 @@
   "inf_fetching": { "message": "Antwort wird abgerufen…" },
   "inf_show_more": { "message": "▼ mehr anzeigen" },
   "inf_show_less": { "message": "▲ weniger anzeigen" },
+  "inf_copy": { "message": "⧉ kopieren" },
   "inf_no_requests": { "message": "Noch keine Inferenzanfragen erkannt." },
   "badge_slashed": { "message": "⚡ BESTRAFT" },
   "badge_challenged": { "message": "⚠ ANGEFOCHTEN" },

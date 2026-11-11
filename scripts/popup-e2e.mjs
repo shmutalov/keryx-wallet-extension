@@ -23,6 +23,10 @@ globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
 dom.window.confirm = () => true;
+let clipboardText = null;
+Object.defineProperty(dom.window.navigator, 'clipboard', {
+  value: { writeText: async (s) => { clipboardText = s; } }, configurable: true,
+});
 
 // chrome.* stub backed by plain objects
 const localStore = {};
@@ -103,7 +107,8 @@ const MOCK_CAPABILITIES = [
 const MOCK_INFERENCES = [
   { tx_id: 'cd'.repeat(32), model: 'glm-4-9b-0414', prompt: 'Answered question', max_tokens: 128,
     inference_reward: 60000000, priority_fee: 30000000, daa_score: 100, block_hash: 'ef'.repeat(32),
-    payload_prefix: 'aa11'.repeat(4), result_text: 'The answer is 42.', result: 'raw' },
+    payload_prefix: 'aa11'.repeat(4), result: 'raw',
+    result_text: 'The answer is 42. ' + 'It is long enough to be clamped. '.repeat(15) }, // > 400 chars
   { tx_id: 'ce'.repeat(32), model: 'glm-4-9b-0414', prompt: 'Pending question', max_tokens: 128,
     inference_reward: 60000000, priority_fee: 30000000, daa_score: 101, block_hash: 'ef'.repeat(32),
     payload_prefix: 'bb22'.repeat(4), result: null },
@@ -117,6 +122,7 @@ let mockInferences = MOCK_INFERENCES;
 let mockProviders = null; // /ai/providers body
 let mockInferenceResult = null; // /inference/{tx_id} body, null = 404 (not indexed yet)
 const ipfsCalls = [];
+let feedCalls = 0; // /infer? hits = live-feed refresh ticks
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   const u = String(url);
@@ -149,6 +155,7 @@ globalThis.fetch = async (url, init) => {
     return new Response(JSON.stringify(MOCK_CAPABILITIES), { status: 200 });
   }
   if (u.includes('/infer?')) {
+    feedCalls++;
     return new Response(JSON.stringify(mockInferences), { status: 200 });
   }
   if (u.includes('/challenges?')) {
@@ -436,6 +443,22 @@ check('15s', 'live feed renders responded + pending items with badges',
   byId('inf-feed').textContent.includes('✓ RESPONDED') &&
   byId('inf-feed').textContent.includes('⏳ PENDING') &&
   byId('inf-feed').textContent.includes('The answer is 42.'));
+const feedAnswer = () => byId('inf-feed').querySelector('.inf-result-text');
+const feedToggle = () => feedAnswer()?.parentElement.querySelector('.inf-toggle');
+const feedCopy = () => feedAnswer()?.parentElement.querySelector('.inf-copy');
+const clampedBefore = feedAnswer()?.classList.contains('clamped');
+feedCopy()?.click();
+await sleep(50);
+check('15s1', '"copy" puts the whole answer on the clipboard, even while it is clamped',
+  clampedBefore && clipboardText === MOCK_INFERENCES[0].result_text && feedCopy()?.textContent === '✓ copied');
+feedToggle()?.click();
+const opened = feedAnswer() && !feedAnswer().classList.contains('clamped');
+const ticks = feedCalls;
+await until(() => feedCalls > ticks, 20); // the next 5 s auto-refresh rebuilds the feed
+await sleep(200);
+check('15s2', 'a long answer opened with "show more" stays open across the auto-refresh',
+  clampedBefore && opened && feedCalls > ticks &&
+  !feedAnswer()?.classList.contains('clamped') && feedToggle()?.textContent === '▲ show less');
 
 // --- H14 private inference: the prompt is sealed to the tier's miners, the
 // request is kept encrypted per account, the miner's sealed answer is opened.

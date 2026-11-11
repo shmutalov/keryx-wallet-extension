@@ -144,8 +144,8 @@ const QR_ICON =
 const LOGO_SVG =
   '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--mx-bright)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(46,227,88,.45))"><path d="M8 3v18"></path><path d="M8 12h3"></path><path d="M11 12 17 4h3l-6 8 6 8h-3l-6-8"></path><circle cx="8" cy="3" r="1.1" fill="var(--mx-bright)"></circle><circle cx="8" cy="21" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="4" r="1.1" fill="var(--mx-bright)"></circle><circle cx="20" cy="20" r="1.1" fill="var(--mx-bright)"></circle></svg>';
 
-function copyButton(getText, label = '⧉', copiedLabel = '✓', id) {
-  const btn = el('button', { ...(id ? { id } : {}), class: 'btn-small', title: t('title_copy') }, label);
+function copyButton(getText, label = '⧉', copiedLabel = '✓', id, cls = 'btn-small') {
+  const btn = el('button', { ...(id ? { id } : {}), class: cls, title: t('title_copy') }, label);
   btn.addEventListener('click', () => {
     navigator.clipboard.writeText(getText()).catch(() => {});
     btn.textContent = copiedLabel;
@@ -609,17 +609,29 @@ function renderSettings() {
 
 const ipfsCache = new Map(); // cid -> text | Promise
 
-/** Clamped long text with a show-more toggle (inference answers). */
-function clampedText(text) {
+/**
+ * An inference answer: clamped when long (with a show-more toggle) and a copy
+ * button that always takes the full text. The AI page redraws its lists every
+ * few seconds, so whether an answer is open lives in `expanded` (by `key`)
+ * rather than in the node, and survives the redraw.
+ */
+function clampedText(text, key, expanded) {
   const long = text.length > 400;
-  const body = el('div', { class: `inf-result-text${long ? ' clamped' : ''}` }, text);
-  if (!long) return [body];
-  const toggle = el('button', { class: 'link-btn', style: 'font-size:10px;margin-top:2px' }, t('inf_show_more'));
-  toggle.addEventListener('click', () => {
-    const clamped = body.classList.toggle('clamped');
-    toggle.textContent = clamped ? t('inf_show_more') : t('inf_show_less');
-  });
-  return [body, toggle];
+  const open = expanded.has(key);
+  const body = el('div', { class: `inf-result-text${long && !open ? ' clamped' : ''}` }, text);
+  const actions = el('div', { class: 'inf-result-actions' },
+    copyButton(() => text, t('inf_copy'), t('copied'), undefined, 'link-btn inf-copy'));
+  if (long) {
+    const toggle = el('button', { class: 'link-btn inf-toggle' }, t(open ? 'inf_show_less' : 'inf_show_more'));
+    toggle.addEventListener('click', () => {
+      const clamped = body.classList.toggle('clamped');
+      if (clamped) expanded.delete(key);
+      else expanded.add(key);
+      toggle.textContent = clamped ? t('inf_show_more') : t('inf_show_less');
+    });
+    actions.prepend(toggle);
+  }
+  return [body, actions];
 }
 
 const SUBMIT_STEPS = {
@@ -647,6 +659,7 @@ function renderInference() {
   let h15 = false; // H15 live: the context rule applies (and requests seal under key schedule 2)
   let mine = []; // this account's sealed requests (requests.js), newest first
   let polling = false;
+  const expanded = new Set(); // answers the user opened ("mine:<tx>" / "feed:<tx>")
   const sealed = () => era === 'sealed';
 
   const availLine = el('div', { class: 'balance-meta' }, `${t('label_balance')}: …`);
@@ -882,7 +895,7 @@ function renderInference() {
           ? el('span', { class: 'badge badge-bad' }, t('badge_no_answer'))
           : el('span', { class: 'badge badge-pend' }, t('badge_pending'));
       const result = r.status === 'answered'
-        ? el('div', { class: 'inf-result' }, ...clampedText(r.answer))
+        ? el('div', { class: 'inf-result' }, ...clampedText(r.answer, `mine:${r.id}`, expanded))
         : el('div', { class: 'inf-result' }, el('span', { class: 'hint' },
           r.status === 'failed'
             ? (r.note ? t('inf_failed_note', r.note) : t('inf_failed_timeout'))
@@ -908,11 +921,15 @@ function renderInference() {
     if (polling) return;
     polling = true;
     try {
+      let changed = false;
       for (const r of mine.filter((x) => x.status === 'pending')) {
         const patch = await checkAnswer(wallet, r);
-        if (patch) mine = await updateRequest(wallet, r.id, patch);
+        if (patch) {
+          mine = await updateRequest(wallet, r.id, patch);
+          changed = true;
+        }
       }
-      renderMine();
+      if (changed) renderMine();
     } finally {
       polling = false;
     }
@@ -922,24 +939,25 @@ function renderInference() {
     const r = item.result;
     if (!r) return null;
     const box = el('div', { class: 'inf-result' });
+    const clamp = (text) => clampedText(text, `feed:${item.tx_id}`, expanded);
     if (item.sealed) {
       // `result` is only the multihash of the sealed body, not an IPFS pin.
       const own = mine.find((m) => m.id === item.tx_id && m.status === 'answered');
-      if (own) box.replaceChildren(...clampedText(own.answer));
+      if (own) box.replaceChildren(...clamp(own.answer));
       else box.replaceChildren(el('span', { class: 'hint' }, t('inf_sealed_answer')));
     } else if (/^Qm/.test(r) && r.length === 46) {
       box.replaceChildren(el('span', { class: 'hint' }, t('inf_fetching')));
       if (!ipfsCache.has(r)) ipfsCache.set(r, api.ipfsText(r));
       Promise.resolve(ipfsCache.get(r)).then((text) => {
         ipfsCache.set(r, text);
-        box.replaceChildren(...clampedText(text));
+        box.replaceChildren(...clamp(text));
       }).catch(() => {
         box.replaceChildren(el('a', {
           href: `${API_BASE}/ipfs/${r}`, target: '_blank', rel: 'noreferrer', class: 'hint',
         }, `${r.slice(0, 12)}…${r.slice(-6)} ↗`));
       });
     } else {
-      box.replaceChildren(...clampedText(item.result_text || r));
+      box.replaceChildren(...clamp(item.result_text || r));
     }
     return box;
   }

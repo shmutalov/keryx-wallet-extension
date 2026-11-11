@@ -179,6 +179,7 @@
   "inf_fetching": { "message": "正在获取响应…" },
   "inf_show_more": { "message": "▼ 展开" },
   "inf_show_less": { "message": "▲ 收起" },
+  "inf_copy": { "message": "⧉ 复制" },
   "inf_no_requests": { "message": "尚未检测到推理请求。" },
   "badge_slashed": { "message": "⚡ 已罚没" },
   "badge_challenged": { "message": "⚠ 已质疑" },

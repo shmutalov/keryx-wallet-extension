@@ -206,6 +206,7 @@
   "inf_fetching": { "message": "fetching response…" },
   "inf_show_more": { "message": "▼ show more" },
   "inf_show_less": { "message": "▲ show less" },
+  "inf_copy": { "message": "⧉ copy" },
   "inf_no_requests": { "message": "No inference requests detected yet." },
   "badge_slashed": { "message": "⚡ SLASHED" },
   "badge_challenged": { "message": "⚠ CHALLENGED" },
