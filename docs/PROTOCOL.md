@@ -380,10 +380,12 @@ This wallet keeps one derivation for both schedules — `secret = HKDF(salt
 "KeryxChatRootKeyV1", account private key, "root" ‖ cohort seed)`, used as the root
 key under schedule 1 (as keryx-labs.com does) and as the seed under schedule 2 — and
 records each request's schedule. The cohort seed is the first input's outpoint, so a
-secret is used for exactly one request under exactly one schedule. As of 2026-10-28
-keryx-labs.com's `/infer` still seals schedule 1 and has no schedule-2 derivation; if
-it adopts a different one, the two clients simply stop being able to open each
-other's schedule-2 answers (each still opens its own).
+secret is used for exactly one request under exactly one schedule. keryx-labs.com's
+`/infer` adopted schedule 2 by 2026-11-11 with the same choices — the secret from
+`"KeryxChatRootKeyV1"` used as the seed, the switch at DAA 140,115,000 (3,500 on
+testnet), the same `KXTK` decoding — verified by reading its bundle function by
+function, so the two clients still open each other's answers under both schedules.
+The site records no schedule: it opens schedule 2 first and falls back to 1.
 
 **Stage-2 answers** (`trace_chain_activation`, `verifiable-inference/src/answer.rs`).
 The sealed answer's plaintext becomes `text ‖ token ids (u32 LE each) ‖ count (u32 LE)
@@ -409,3 +411,19 @@ refusing: on tier 0 at 4,096 max tokens only 3,584 bytes are sure to fit.
 `GET /infer`: their prompts are unreadable, and a requester reads its answer from
 `/inference/{tx_id}`. Since every request is sealed from H14, the feed holds only
 pre-H14 public requests (newest at DAA 121,365,687 on 2026-10-28).
+
+## Service rules — H16 (keryx-node v1.6.7, verified 2026-11-11)
+
+Seven gates at **mainnet DAA 147,000,000** (testnet 180,000), all on the miner side
+of the service ledger: one strike per request and at most one per hour per miner
+(uniform ladder), suspensions judged at the selected parent, a per-escrow-key audit
+queue, an answer judged on its own trace shape when its window is longer, a smaller
+PoM v5 context pad, and untraced answers on audited tiers no longer serve their
+request. Nodes older than 1.6.7 are dropped once it is active. Payload layouts, the
+envelope and both key schedules, request identity, the model lineup, the flat
+prices and the context floors (`safe_prompt_len`, which the H15 warning mirrors) are
+unchanged, so requesters need nothing. One consequence: the first answer that opens
+may come from a miner the ledger does not credit — its text is still a recipient's
+answer. keryx-labs.com now waits up to 5 s after the first answer opens (unless
+every recipient has answered) and shows the text most opened answers agree on; this
+wallet shows the first answer that opens.
